@@ -24,55 +24,23 @@ SOFTWARE.
 
 */
 
-#include "mesh.hpp"
+@kernel void lssInitialCondition3D(const dlong Nelements,
+                                   const dfloat time,
+                                   @restrict const  dfloat *  x,
+                                   @restrict const  dfloat *  y,
+                                   @restrict const  dfloat *  z,
+                                   @restrict        dfloat *  q){
 
-namespace libp {
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np + n;
 
-void mesh_t::ReferenceNodesHex3D(){
+      dfloat r_q = 0.0;
 
-  Nq = N+1;
-  Nfp = Nq*Nq;
-  Np = Nq*Nq*Nq;
+      lssInitialConditions3D(time, x[id], y[id], z[id], &r_q);
 
-  /* Nodal Data */
-  NodesHex3D(N, r, s, t);
-  FaceNodesHex3D(N, r, s, t, faceNodes);
-  VertexNodesHex3D(N, r, s, t, vertexNodes);
-
-  //GLL quadrature
-  JacobiGLL(N, gllz, gllw);
-
-  //Lumped Mass matrix
-  LumpedMassMatrixHex3D(N, gllw, MM);
-  invLumpedMassMatrixHex3D(N, gllw, invMM);
-
-  // D matrix
-  Dmatrix1D(N, gllz, gllz, D);
-  o_D = platform.malloc<dfloat>(D);
-
-  o_DW = o_D; 
-
-  /* Plotting data */
-  plotN = N + 3; //enriched interpolation space for plotting
-  plotNq = plotN + 1;
-  plotNp = plotNq*plotNq*plotNq;
-
-  /* Plotting nodes */
-  EquispacedNodesHex3D(plotN, plotR, plotS, plotT);
-
-  plotNelements = 6*plotN*plotN*plotN;
-  plotNverts = 4;
-  EquispacedEToVHex3D(plotN, plotEToV);
-
-  memory<dfloat> plot1D;
-  EquispacedNodes1D(plotN, plot1D);
-  InterpolationMatrix1D(N, gllz, plot1D, plotInterp);
-
-  props["defines/" "p_N"]= N;
-  props["defines/" "p_Nq"]= Nq;
-  props["defines/" "p_Np"]= Np;
-  props["defines/" "p_Nfp"]= Nfp;
-  props["defines/" "p_NfacesNfp"]= Nfp*Nfaces;
+      const dlong qbase = e*p_Np + n;
+      q[qbase] = r_q;
+    }
+  }
 }
-
-} //namespace libp

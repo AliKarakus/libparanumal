@@ -124,6 +124,7 @@ void lserk4::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
     }
 
     Step(solver, o_q, time, stepdt);
+    solver.postStep(o_q, time, stepdt); 
     time += stepdt;
     tstep++;
   }
@@ -142,6 +143,8 @@ void lserk4::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dflo
     // update solution using Runge-Kutta
     updateKernel(N, _dt, rka[rk], rkb[rk],
                  o_rhsq, o_resq, o_q);
+
+    solver.postStage(o_q,o_rhsq, currentTime);
   }
 }
 

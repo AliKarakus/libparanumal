@@ -50,6 +50,9 @@ void mesh_t::ReferenceNodesQuad2D(){
   Dmatrix1D(N, gllz, gllz, D);
   o_D = platform.malloc<dfloat>(D);
 
+  // Weak derivatives
+  o_DW = o_D; 
+
   /* Plotting data */
   plotN = N + 3; //enriched interpolation space for plotting
   plotNq = plotN + 1;

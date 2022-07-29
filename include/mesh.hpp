@@ -117,6 +117,9 @@ class mesh_t {
   memory<dfloat> Dr, Ds, Dt;    // collocation differentiation matrices
   memory<dfloat> D;
   deviceMemory<dfloat> o_D;
+  memory<dfloat> DWr, DWs, DWt; // collocation weak differentiation matrices
+  memory<dfloat> DW;
+  deviceMemory<dfloat> o_DW;
   memory<dfloat> MM, invMM;     // reference mass matrix
   deviceMemory<dfloat> o_MM;
   memory<dfloat> LIFT;          // lift matrix
@@ -773,6 +776,11 @@ class mesh_t {
                            const memory<dfloat> _r,
                            const memory<dfloat> _s,
                            memory<dfloat>& _D);
+  static void DWmatrixTri2D(const int _N,
+                           const memory<dfloat> _r,
+                           const memory<dfloat> _s,
+                           memory<dfloat> _MM,
+                           memory<dfloat>& _DW);
   static void LIFTmatrixTri2D(const int _N,
                               const memory<int> _faceNodes,
                               const memory<dfloat> _r,
@@ -949,6 +957,12 @@ class mesh_t {
                            const memory<dfloat> _s,
                            const memory<dfloat> _t,
                            memory<dfloat>& _D);
+  static void DWmatrixTet3D(const int _N,
+                           const memory<dfloat> _r,
+                           const memory<dfloat> _s,
+                           const memory<dfloat> _t,
+                           memory<dfloat> _MM,
+                           memory<dfloat>& _DW);
   static void LIFTmatrixTet3D(const int _N,
                               const memory<int> _faceNodes,
                               const memory<dfloat> _r,

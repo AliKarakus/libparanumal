@@ -1,0 +1,341 @@
+/*
+
+The MIT License (MIT)
+
+Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+@kernel void lssRedistanceSetFields(const dlong Nelements,
+                                         const dfloat time,
+                                         @restrict const  dfloat *  x,
+                                         @restrict const  dfloat *  y,
+                                         @restrict const  dfloat *  z,
+                                         @restrict const  dfloat *  phi,
+                                         @restrict        dfloat *  q){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np + n;
+
+      dfloat r_q = phi[id];
+
+      const dlong qbase = e*p_Np*p_Nfields + n;
+      q[qbase + 0*p_Np] =  r_q; // Create + flow
+      q[qbase + 1*p_Np] = -r_q; // Create - flow
+    }
+  }
+}
+
+
+
+bool  mysign(dfloat x,dfloat y)
+{
+  int sx = x > 0.f ? 1:-1;
+  int sy = y > 0.f ? 1:-1;
+
+  bool val = (sx + sy)==0 ? true:false;  
+  return val;
+}
+
+void ENO2(const dfloat tm1, 
+          const dfloat t0, 
+          const dfloat tp1, 
+          const dfloat tp2,
+          const dfloat qtm1, 
+          const dfloat qt0,
+          const dfloat qtp1,
+          const dfloat qtp2,
+          dfloat *phir ){
+// // Construct polynomials using Newton Divided Differences
+// // First order divided differences
+const dfloat qnp01  = (qt0  - qtp1) /(t0 - tp1); 
+const dfloat qnm10  = (qtm1 - qt0)  /(tm1 - t0); 
+const dfloat qnp12  = (qtp1 - qtp2) /(tp1 - tp2);
+
+const dfloat qnp2   = (qnp01 - qnp12) /(t0 - tp2);
+const dfloat qnm2   = (qnm10 - qnp01) /(tm1-tp1);
+
+// Select the less oscilatory one
+dfloat qeno = (fabs(qnm2) <= fabs(qnp2)) ? qnm2 : qnp2; 
+
+
+// A quick Newton-Raphson 
+dfloat ti = t0; 
+for (int i=0; i<10; i++){
+    const dfloat f  = (qt0-qnp01*t0 +qeno*t0*tp1) + (qnp01-qeno*(t0 +tp1))*ti + qeno*ti*ti; 
+    const dfloat df = (qnp01-qeno*(t0 +tp1)) + 2*qeno*ti; 
+    ti = ti - f/df; 
+}
+
+*phir = ti; 
+
+}
+
+
+void ENO3(const dfloat tm2, 
+          const dfloat tm1, 
+          const dfloat tm0, 
+          const dfloat tp1, 
+          const dfloat tp2,
+          const dfloat tp3,
+          const dfloat qtm2, 
+          const dfloat qtm1, 
+          const dfloat qtm0,
+          const dfloat qtp1,
+          const dfloat qtp2,
+          const dfloat qtp3,
+          dfloat *phir ){
+
+// Construct polynomials using Newton Divided Differences
+// First order divided differences
+const dfloat uim0_1  =  (qtp1 - qtm0)/(tp1 - tm0); 
+const dfloat uim1_1  =  (qtm0 - qtm1)/(tm0 - tm1); 
+const dfloat uip1_1  =  (qtp2 - qtp1)/(tp2 - tp1); 
+//
+const dfloat uim2_1  =  (qtm1 - qtm2)/(tm1 - tm2);
+const dfloat uip2_1  =  (qtp3 - qtp2)/(tp3 - tp2);
+// Second order terms
+const dfloat uim1_2 =  (uim0_1 - uim1_1 )/(tp1 - tm1); //-
+const dfloat uim0_2  = (uip1_1 - uim0_1 )/(tp2 - tm0); //+
+
+const dfloat uim2_2 =  (uim1_1 - uim2_1 )/(tm0 - tm2); 
+const dfloat uip1_2  = (uip2_1 - uip1_1 )/(tp3 - tp1);
+
+// Noe that this stencil is fixed to take the root between [m0, p1]
+const dfloat a0 = qtm0; const dfloat a1 = uim0_1; 
+dfloat a2 = 0.f; dfloat a3 = 0.f; 
+dfloat t30 = 0.f; dfloat t31 = 0.f; dfloat t32 = 0.f;  
+
+if(fabs(uim1_2)<=fabs(uim0_2)){
+  a2 = uim1_2; // move to left
+  const dfloat uim2_3 = (uim1_2 - uim2_2)/(tp1 - tm2); 
+  const dfloat uim1_3 = (uim0_2 - uim1_2)/(tp2 - tm1);
+
+  t30 = tm1; t31 = tm0; t32 = tp1; 
+  
+  if(fabs(uim2_3) < fabs(uim1_3)){// Stencil is [m2, m1, m0, p1] 
+    a3 = uim2_3;
+  }else{ // move to right [m1, m0, p1, p2]
+    a3 = uim1_3; 
+  }
+}else{
+   a2 = uim0_2; // move to right
+  const dfloat uim1_3 = (uim0_2 - uim1_2)/(tp2 - tm1); 
+  const dfloat uim0_3 = (uip1_2 - uim0_2)/(tp3 - tm0); 
+
+  t30 = tm0; t31 = tp1; t32 = tp2; 
+  // Stencil is [m2, m1, m0, p1] 
+  if(fabs(uim1_3) < fabs(uim0_3)){
+    a3 = uim1_3;
+  }else{
+    a3 = uim0_3; 
+  }
+}
+
+// A quick Newton-Raphson 
+dfloat ti = tm0; 
+for (int i=0; i<10; i++){
+    const dfloat alpha_3 = a3; 
+    // const dfloat alpha_3 = 0.f; t30 = 0.f; t31 = 0.f; t32 = 0.f; 
+    const dfloat alpha_2 = (a2 - a3*t30 - a3*t31 - a3*t32); 
+    const dfloat alpha_1 = (a1 - a2*tm0 - a2*tp1 + t32*(a3*t30 + a3*t31) + a3*t30*t31); 
+    const dfloat alpha_0 = a0 - a1*tm0 + a2*tm0*tp1 - a3*t30*t31*t32; 
+
+    const dfloat f  = ((alpha_3*ti + alpha_2)*ti + alpha_1)*ti + alpha_0; 
+    const dfloat df = ti*(3.f*ti*alpha_3 + 2.f*alpha_2) + alpha_1;  
+    ti = ti - f/df; 
+}
+*phir = ti; 
+}
+
+
+@kernel void redistanceInitialHistoryENO2(const dlong Nelements,
+                               const int index,
+                               const dlong shift, 
+                               @restrict dfloat *  phiH){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np*p_Nfields + n;
+
+      const int indexp2 = index; 
+      const int indexp1 = (index + 1)%p_Nrecon; 
+      const int indext0 = (index + 2)%p_Nrecon; 
+      const int indexm1 = (index + 3)%p_Nrecon; 
+      // Check if any one changes the sign 
+      // const dfloat qpt0 = phiH[id + 0*p_Np + indext0*shift];  
+      const dfloat qpp1 = phiH[id + 0*p_Np + indexp1*shift];  
+
+      // const dfloat qmt0 = phiH[id + 1*p_Np + indext0*shift];  
+      const dfloat qmp1 = phiH[id + 1*p_Np + indexp1*shift];  
+      // u(tm1) = -v(tp1);
+      phiH[id + 0*p_Np + indexm1*shift] = -qmp1; 
+      phiH[id + 1*p_Np + indexm1*shift] = -qpp1; 
+    }
+  }
+}
+
+
+@kernel void redistanceInitialHistoryENO3(const dlong Nelements,
+                               const int index,
+                               const dlong shift, 
+                               @restrict dfloat *  phiH){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np*p_Nfields + n;
+
+      // const int indexp3 = index; 
+      const int indexp2 = (index + 1)%p_Nrecon; 
+      const int indexp1 = (index + 2)%p_Nrecon; 
+      // const int indext0 = (index + 3)%p_Nrecon; 
+      const int indexm1 = (index + 4)%p_Nrecon; 
+      const int indexm2 = (index + 5)%p_Nrecon; 
+
+      // Check if any one changes the sign 
+      const dfloat qpp1 = phiH[id + 0*p_Np + indexp1*shift];  
+      const dfloat qpp2 = phiH[id + 0*p_Np + indexp2*shift];  
+
+      const dfloat qmp1 = phiH[id + 1*p_Np + indexp1*shift];  
+      const dfloat qmp2 = phiH[id + 1*p_Np + indexp2*shift];  
+
+      // // u(tm1) = -v(tp1);u(tm2) = -v(tp2);
+      phiH[id + 0*p_Np + indexm1*shift] = -qmp1; 
+      phiH[id + 0*p_Np + indexm2*shift] = -qmp2; 
+      phiH[id + 1*p_Np + indexm1*shift] = -qpp1; 
+      phiH[id + 1*p_Np + indexm2*shift] = -qpp2; 
+    }
+  }
+}
+
+
+
+
+@kernel void redistanceReconstructENO2(const dlong Nelements,
+                                       const int index,
+                                       const dlong shift, 
+                                       @restrict const  dfloat *  rtime,
+                                       @restrict const  dfloat *  phiH,
+                                       @restrict        dfloat *  phi){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np*p_Nfields + n;
+
+      const int indexp2 = index; 
+      const int indexp1 = (index + 1)%p_Nrecon; 
+      const int indext0 = (index + 2)%p_Nrecon; 
+      const int indexm1 = (index + 3)%p_Nrecon; 
+
+      // Check if any one changes the sign 
+      const dfloat qpt0 = phiH[id + 0*p_Np + indext0*shift];  
+      const dfloat qpp1 = phiH[id + 0*p_Np + indexp1*shift];  
+      const dfloat qmt0 = phiH[id + 1*p_Np + indext0*shift];  
+      const dfloat qmp1 = phiH[id + 1*p_Np + indexp1*shift];  
+
+      const dfloat t0    = rtime[indext0];
+      const dfloat tp1   = rtime[indexp1];
+      const dfloat tp2   = rtime[indexp2];
+      const dfloat tm1   = rtime[indexm1];
+           
+      if(mysign(qpt0,qpp1)){
+        // We have interface here!!!!
+      const dfloat qpp2 = phiH[id + 0*p_Np + indexp2*shift];  
+      const dfloat qpm1 = phiH[id + 0*p_Np + indexm1*shift];  
+      // Reconstruct in time
+      dfloat phipn = 0; 
+      ENO2(tm1, t0, tp1, tp2, qpm1, qpt0, qpp1, qpp2, &phipn); 
+      phi[e*p_Np + n] = phipn; 
+      // phi[e*p_Np + n] = t0; 
+      }
+
+      if(mysign(qmt0,qmp1)){
+      const dfloat qmp2 = phiH[id + 1*p_Np + indexp2*shift];  
+      const dfloat qmm1 = phiH[id + 1*p_Np + indexm1*shift];  
+      // Reconstruct in time
+      dfloat phimn = 0; 
+      ENO2(tm1, t0, tp1, tp2, qmm1, qmt0, qmp1, qmp2, &phimn); 
+      phi[e*p_Np + n] = -phimn; 
+      }
+    }
+  }
+}
+
+@kernel void redistanceReconstructENO3(const dlong Nelements,
+                               const int index,
+                               const dlong shift, 
+                               @restrict const  dfloat *  rtime,
+                               @restrict const  dfloat *  phiH,
+                               @restrict        dfloat *  phi){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np*p_Nfields + n;
+
+      const int indexp3 = index; 
+      const int indexp2 = (index + 1)%p_Nrecon; 
+      const int indexp1 = (index + 2)%p_Nrecon; 
+      const int indext0 = (index + 3)%p_Nrecon; 
+      const int indexm1 = (index + 4)%p_Nrecon; 
+      const int indexm2 = (index + 5)%p_Nrecon; 
+
+      // Check if any one changes the sign 
+      const dfloat qpt0 = phiH[id + 0*p_Np + indext0*shift];  
+      const dfloat qpp1 = phiH[id + 0*p_Np + indexp1*shift];  
+      
+      const dfloat qmt0 = phiH[id + 1*p_Np + indext0*shift];  
+      const dfloat qmp1 = phiH[id + 1*p_Np + indexp1*shift];  
+
+      const dfloat tm2   = rtime[indexm2];
+      const dfloat tm1   = rtime[indexm1];
+      const dfloat tm0   = rtime[indext0];
+      const dfloat tp1   = rtime[indexp1];
+      const dfloat tp2   = rtime[indexp2];
+      const dfloat tp3   = rtime[indexp3];
+           
+      if(mysign(qpt0,qpp1)){
+        // We have interface here!!!!
+      const dfloat qpp3 = phiH[id + 0*p_Np + indexp3*shift];  
+      const dfloat qpp2 = phiH[id + 0*p_Np + indexp2*shift];  
+      const dfloat qpm1 = phiH[id + 0*p_Np + indexm1*shift];  
+      const dfloat qpm2 = phiH[id + 0*p_Np + indexm2*shift];  
+      // Reconstruct in time
+      dfloat phipn = 0; 
+      ENO3(tm2, tm1, tm0, tp1, tp2, tp3, qpm2, qpm1, qpt0, qpp1, qpp2, qpp3, &phipn); 
+      phi[e*p_Np + n] = phipn; 
+      }
+
+      if(mysign(qmt0,qmp1)){
+ // We have interface here!!!!
+      const dfloat qmp3 = phiH[id + 1*p_Np + indexp3*shift];  
+      const dfloat qmp2 = phiH[id + 1*p_Np + indexp2*shift];  
+      const dfloat qmm1 = phiH[id + 1*p_Np + indexm1*shift];  
+      const dfloat qmm2 = phiH[id + 1*p_Np + indexm2*shift];  
+      // Reconstruct in time
+      dfloat phimn = 0; 
+      ENO3(tm2, tm1, tm0, tp1, tp2, tp3, qmm2, qmm1, qmt0, qmp1, qmp2, qmp3, &phimn); 
+      phi[e*p_Np + n] = -phimn;       }
+    }
+  }
+}
+
+
+

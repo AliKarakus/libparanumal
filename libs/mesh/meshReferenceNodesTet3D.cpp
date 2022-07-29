@@ -61,6 +61,21 @@ void mesh_t::ReferenceNodesTet3D(){
   linAlg_t::matrixTranspose(Np, Np, Dt, Np, DtT, Np);
   o_D = platform.malloc<dfloat>(DT);
 
+    //packed DW matrices
+  DWmatrixTet3D(N, r, s, t, MM, DW);
+  DWr = DW + 0*Np*Np;
+  DWs = DW + 1*Np*Np;
+  DWt = DW + 2*Np*Np;
+
+  memory<dfloat> DWT(3*Np*Np);
+  memory<dfloat> DWrT = DWT + 0*Np*Np;
+  memory<dfloat> DWsT = DWT + 1*Np*Np;
+  memory<dfloat> DWtT = DWT + 2*Np*Np;
+  linAlg_t::matrixTranspose(Np, Np, DWr, Np, DWrT, Np);
+  linAlg_t::matrixTranspose(Np, Np, DWs, Np, DWsT, Np);
+  linAlg_t::matrixTranspose(Np, Np, DWt, Np, DWtT, Np);
+  o_DW = platform.malloc<dfloat>(DWT);
+
   LIFTmatrixTet3D(N, faceNodes, r, s, t, LIFT);
   SurfaceMassMatrixTet3D(N, MM, LIFT, sM);
 

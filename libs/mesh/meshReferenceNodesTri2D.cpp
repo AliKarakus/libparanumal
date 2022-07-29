@@ -58,6 +58,18 @@ void mesh_t::ReferenceNodesTri2D(){
   linAlg_t::matrixTranspose(Np, Np, Ds, Np, DsT, Np);
   o_D = platform.malloc<dfloat>(DT);
 
+   //packed DW matrices
+  DWmatrixTri2D(N, r, s, MM, DW);
+  DWr = DW + 0*Np*Np;
+  DWs = DW + 1*Np*Np;
+
+  memory<dfloat> DWT(2*Np*Np);
+  memory<dfloat> DWrT = DWT + 0*Np*Np;
+  memory<dfloat> DWsT = DWT + 1*Np*Np;
+  linAlg_t::matrixTranspose(Np, Np, DWr, Np, DWrT, Np);
+  linAlg_t::matrixTranspose(Np, Np, DWs, Np, DWsT, Np);
+  o_DW = platform.malloc<dfloat>(DWT);
+
   LIFTmatrixTri2D(N, faceNodes, r, s, LIFT);
   SurfaceMassMatrixTri2D(N, MM, LIFT, sM);
 

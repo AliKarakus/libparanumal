@@ -510,6 +510,52 @@ void mesh_t::DmatrixTet3D(const int _N,
   linAlg_t::matrixRightSolve(_Np, _Np, Vt, _Np, _Np, V, _Dt);
 }
 
+void mesh_t::DWmatrixTet3D(const int _N,
+                           const memory<dfloat> _r,
+                           const memory<dfloat> _s,
+                           const memory<dfloat> _t,
+                           memory<dfloat> _MM,
+                           memory<dfloat>& _DW){
+
+  const int _Np = (_N+1)*(_N+2)*(_N+3)/6;
+
+  memory<dfloat> V, Vr, Vs, Vt;
+  VandermondeTet3D(_N, _r, _s, _t, V);
+  GradVandermondeTet3D(_N, _r, _s, _t, Vr, Vs, Vt);
+
+  //DWr = V*Vr' / (V*V') = V*Vr'*MM
+  //DWs = V*Vs' / (V*V') = V*Vs'*MM 
+  _DW.malloc(3*_Np*_Np);
+  memory<dfloat> _DWr = _DW + 0*_Np*_Np;
+  memory<dfloat> _DWs = _DW + 1*_Np*_Np;
+  memory<dfloat> _DWt = _DW + 2*_Np*_Np;
+  
+  // temporary storage
+  memory<dfloat> tmpr(_Np), tmps(_Np), tmpt(_Np);  
+
+  for(int n=0;n<_Np;++n){
+    for(int m=0;m<_Np;++m){
+      dfloat resr = 0, ress = 0, rest = 0;
+      for(int i=0;i<_Np;++i){
+        resr += V[n*_Np+i]*Vr[m*_Np+i];
+        ress += V[n*_Np+i]*Vs[m*_Np+i];
+        rest += V[n*_Np+i]*Vt[m*_Np+i];
+      }
+    tmpr[m] = resr; tmps[m] = ress; tmpt[m] = rest;
+    }
+    // multiply with MM
+     for(int m=0;m<_Np;++m){
+      dfloat resr = 0, ress = 0,  rest = 0;
+      for(int i=0;i<_Np;++i){
+        resr += tmpr[i]*_MM[i*_Np+m];
+        ress += tmps[i]*_MM[i*_Np+m];
+        rest += tmpt[i]*_MM[i*_Np+m];
+      }
+    _DWr[n*_Np + m] = resr; _DWs[n*_Np + m] = ress; _DWt[n*_Np + m] = rest;
+      }
+  }
+}
+
 void mesh_t::LIFTmatrixTet3D(const int _N,
                              const memory<int> _faceNodes,
                              const memory<dfloat> _r,

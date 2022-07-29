@@ -1,0 +1,324 @@
+/*
+
+The MIT License (MIT)
+
+Copyright (c) 2017-2022 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+
+// in collocation way (weak form)
+@kernel void lssRedistanceVolumeQuad2D(const dlong Nelements,
+                                  const  dfloat    t,
+                                  @restrict const  dfloat *  vgeo,
+                                  @restrict const  dfloat *  DT,
+                                  @restrict const  dfloat *  q,
+                                  @restrict        dfloat *  gradq){
+
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockV;@outer(0)){  // for all elements
+
+    @shared dfloat s_qpxr[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qpxs[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qpyr[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qpys[p_NblockV][p_Nq][p_Nq];
+
+    @shared dfloat s_qmxr[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qmxs[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qmyr[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qmys[p_NblockV][p_Nq][p_Nq];
+
+    @shared dfloat s_DT[p_Nq][p_Nq];
+
+    for(int es=0;es<p_NblockV;++es;@inner(2)){
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+        for(int i=0;i<p_Nq;++i;@inner(0)){
+          const dlong e = eo+es; // element in block
+          if(e<Nelements){
+            const dlong gid = e*p_Np*p_Nvgeo+ j*p_Nq +i;
+            const dfloat drdx = vgeo[gid + p_RXID*p_Np];
+            const dfloat drdy = vgeo[gid + p_RYID*p_Np];
+            const dfloat dsdx = vgeo[gid + p_SXID*p_Np];
+            const dfloat dsdy = vgeo[gid + p_SYID*p_Np];
+            const dfloat JW   = vgeo[gid + p_JWID*p_Np];
+
+            const dlong id = e*p_Np*p_Nfields + j*p_Nq + i;
+
+            const dfloat qp = q[id+0*p_Np];
+            const dfloat qm = q[id+1*p_Np];
+
+            s_qpxr[es][j][i] = JW*drdx*qp;
+            s_qpxs[es][j][i] = JW*dsdx*qp;
+            s_qpyr[es][j][i] = JW*drdy*qp;
+            s_qpys[es][j][i] = JW*dsdy*qp;
+
+            s_qmxr[es][j][i] = JW*drdx*qm;
+            s_qmxs[es][j][i] = JW*dsdx*qm;
+            s_qmyr[es][j][i] = JW*drdy*qm;
+            s_qmys[es][j][i] = JW*dsdy*qm;
+
+            if (es==0)
+              s_DT[j][i] = DT[j*p_Nq+i];
+          }
+        }
+      }
+    }
+
+    // Make sure all node data is loaded into @shared
+
+    for(int es=0;es<p_NblockV;++es;@inner(2)){
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+        for(int i=0;i<p_Nq;++i;@inner(0)){
+          const dlong e = eo+es;
+          if(e<Nelements){
+            const dlong gid = e*p_Np*p_Nvgeo+ j*p_Nq +i;
+            const dfloat invJW = vgeo[gid + p_IJWID*p_Np];
+            dfloat dqpdx = 0., dqpdy = 0.;
+            dfloat dqmdx = 0., dqmdy = 0.;
+
+            #pragma unroll p_Nq
+            for(int n=0;n<p_Nq;++n){
+              const dfloat Dr = s_DT[n][i];
+              const dfloat Ds = s_DT[n][j];
+
+              dqpdx += Dr*s_qpxr[es][j][n]
+                      +Ds*s_qpxs[es][n][i];
+
+              dqpdy += Dr*s_qpyr[es][j][n]
+                      +Ds*s_qpys[es][n][i];
+
+              dqmdx += Dr*s_qmxr[es][j][n]
+                      +Ds*s_qmxs[es][n][i];
+
+              dqmdy += Dr*s_qmyr[es][j][n]
+                      +Ds*s_qmys[es][n][i];
+
+            }
+
+            const dlong id = e*p_Np*p_Nfields*p_dim + j*p_Nq + i;
+              gradq[id+0*p_Np] = -invJW*dqpdx;
+              gradq[id+1*p_Np] = -invJW*dqpdy;
+              gradq[id+2*p_Np] = -invJW*dqmdx;
+              gradq[id+3*p_Np] = -invJW*dqmdy;
+          }
+        }
+      }
+    }
+  }
+}
+
+void surfaceTerms(dlong e, int es,
+                  int sk, int face,
+                  int i, int j,
+                  dfloat time,
+                  const dfloat *x,
+                  const dfloat *y,
+                  const dfloat *sgeo,
+                  const dlong *vmapM,
+                  const dlong *vmapP,
+                  const dlong *EToB,
+                  const dfloat *q,
+                  @shared dfloat s_qpxf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpxf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpyf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpyf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmxf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmxf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmyf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmyf2[p_NblockS][p_Nq][p_Nq]){
+
+  const dlong  idM = vmapM[sk];
+  const dlong  idP = vmapP[sk];
+
+  const dfloat nx = sgeo[sk*p_Nsgeo+p_NXID];
+  const dfloat ny = sgeo[sk*p_Nsgeo+p_NYID];
+  const dfloat sJ = sgeo[sk*p_Nsgeo+p_SJID];
+  const dfloat invWJ = sgeo[sk*p_Nsgeo+p_WIJID];
+
+  const dlong eM = e;
+  const dlong eP = idP/p_Np;
+  const int vidM = idM%p_Np;
+  const int vidP = idP%p_Np;
+
+  const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+  const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+  const dfloat qpM = q[qbaseM+0*p_Np], qmM = q[qbaseM+1*p_Np];
+        dfloat qpP = q[qbaseP+0*p_Np], qmP = q[qbaseP+1*p_Np];
+
+  const int bc = EToB[face+p_Nfaces*e];
+  // if(bc>0) {
+  //   lssDirichletConditions2D(bc, time, x[idM], y[idM], nx, ny, qM, &qP);
+  // }
+
+  const dfloat sc = invWJ * sJ;
+  
+  // simple upwind
+  dfloat unx = 0.0, dnx = 1.0; 
+  dfloat uny = 0.0, dny = 1.0; 
+  if(nx>= 0){unx = 1.0, dnx = 0.0;}
+  if(ny>= 0){uny = 1.0, dny = 0.0;}
+
+  s_qpxf1[es][j][i] += sc*nx*( (dnx*qpM  + unx*qpP));
+  s_qpxf2[es][j][i] += sc*nx*( (unx*qpM  + dnx*qpP));   
+  s_qpyf1[es][j][i] += sc*ny*( (dny*qpM  + uny*qpP));
+  s_qpyf2[es][j][i] += sc*ny*( (uny*qpM  + dny*qpP));
+
+  s_qmxf1[es][j][i] += sc*nx*( (dnx*qmM  + unx*qmP));
+  s_qmxf2[es][j][i] += sc*nx*( (unx*qmM  + dnx*qmP));  
+  s_qmyf1[es][j][i] += sc*ny*( (dny*qmM  + uny*qmP));
+  s_qmyf2[es][j][i] += sc*ny*( (uny*qmM  + dny*qmP));
+
+}
+
+@kernel void lssRedistanceSurfaceQuad2D(const dlong Nelements,
+                                      @restrict const  dfloat *  sgeo,
+                                      @restrict const  dfloat *  LIFT,
+                                      @restrict const  dlong  *  vmapM,
+                                      @restrict const  dlong  *  vmapP,
+                                      @restrict const  int    *  EToB,
+                                                const  dfloat time,
+                                      @restrict const  dfloat *  x,
+                                      @restrict const  dfloat *  y,
+                                      @restrict const  dfloat *  z,
+                                      @restrict const  dfloat *  q,
+                                      @restrict const  dfloat *  gradq,
+                                      @restrict dfloat *  rhsq){
+
+  // for all elements
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockS;@outer(0)){
+    // @shared storage for flux terms
+    @shared dfloat s_qpxf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpxf2[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpyf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpyf2[p_NblockS][p_Nq][p_Nq];
+
+    @shared dfloat s_qmxf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmxf2[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmyf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmyf2[p_NblockS][p_Nq][p_Nq];
+
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        #pragma unroll p_Nq
+        for(int j=0;j<p_Nq;++j){
+        s_qpxf1[es][j][i] = 0.; 
+        s_qpxf2[es][j][i] = 0.; 
+        s_qpyf1[es][j][i] = 0.; 
+        s_qpyf2[es][j][i] = 0.; 
+
+        s_qmxf1[es][j][i] = 0.; 
+        s_qmxf2[es][j][i] = 0.; 
+        s_qmyf1[es][j][i] = 0.; 
+        s_qmyf2[es][j][i] = 0.; 
+        }
+      }
+    }
+
+    // for all face nodes of all elements
+    // face 0 & 2
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          const dlong sk0 = e*p_Nfp*p_Nfaces + 0*p_Nfp + i;
+          const dlong sk2 = e*p_Nfp*p_Nfaces + 2*p_Nfp + i;
+
+          // surfaceTerms(sk0,0,i,0     );
+          surfaceTerms(e, es, sk0, 0, i, 0, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+
+          // surfaceTerms(sk2,2,i,p_Nq-1);
+          surfaceTerms(e, es, sk2, 2, i, p_Nq-1, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+        }
+      }
+    }
+
+
+    // face 1 & 3
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int j=0;j<p_Nq;++j;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          const dlong sk1 = e*p_Nfp*p_Nfaces + 1*p_Nfp + j;
+          const dlong sk3 = e*p_Nfp*p_Nfaces + 3*p_Nfp + j;
+
+          // surfaceTerms(sk1,1,p_Nq-1,j);
+           surfaceTerms(e, es, sk1, 1, p_Nq-1, j, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                      s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                      s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+
+          // surfaceTerms(sk3,3,0     ,j);
+          surfaceTerms(e, es, sk3, 3, 0, j, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                      s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                      s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+        }
+      }
+    }
+
+
+    // for each node in the element
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          #pragma unroll p_Nq
+          for(int j=0;j<p_Nq;++j){
+            const dlong idg = e*p_Np*p_Nfields*p_dim + j*p_Nq + i;
+
+            const dfloat dqpdx = gradq[idg + 0*p_Np];
+            const dfloat dqpdy = gradq[idg + 1*p_Np];            
+            const dfloat dqmdx = gradq[idg + 2*p_Np];
+            const dfloat dqmdy = gradq[idg + 3*p_Np];
+
+            const dfloat qpx1 =  dqpdx + s_qpxf1[es][j][i]; 
+            const dfloat qpx2 =  dqpdx + s_qpxf2[es][j][i]; 
+            const dfloat qpy1 =  dqpdy + s_qpyf1[es][j][i]; 
+            const dfloat qpy2 =  dqpdy + s_qpyf2[es][j][i]; 
+
+            const dfloat qmx1 =  dqmdx + s_qmxf1[es][j][i]; 
+            const dfloat qmx2 =  dqmdx + s_qmxf2[es][j][i]; 
+            const dfloat qmy1 =  dqmdy + s_qmyf1[es][j][i]; 
+            const dfloat qmy2 =  dqmdy + s_qmyf2[es][j][i]; 
+
+            const dfloat qpx = 0.5f*(qpx1 + qpx2); 
+            const dfloat qpy = 0.5f*(qpy1 + qpy2); 
+
+            const dfloat qmx = 0.5f*(qmx1 + qmx2); 
+            const dfloat qmy = 0.5f*(qmy1 + qmy2); 
+
+             // back to original id 
+            const dlong id = e*p_Np*p_Nfields + j*p_Nq + i;
+            // LLF Numerical Hamiltonian
+            rhsq[id + 0*p_Np] = -(( sqrt( qpx*qpx + qpy*qpy ))-0.5f*(qpx1-qpx2)-0.5*(qpy1-qpy2));
+            rhsq[id + 1*p_Np] = -(( sqrt( qmx*qmx + qmy*qmy ))-0.5f*(qmx1-qmx2)-0.5*(qmy1-qmy2));
+          }
+        }
+      }
+    }
+  }
+}
