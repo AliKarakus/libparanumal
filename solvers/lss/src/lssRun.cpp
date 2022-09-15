@@ -87,6 +87,14 @@ void lss_t::Run(){
   dfloat dt = cfl/(vmax*(mesh.N+1.)*(mesh.N+1.));
   timeStepper.SetTimeStep(dt);
 
+  // Report(dt,0);
+
+  // Stabilize Initial Condition
+  stab.StabilizerApply(o_q, o_q, 0);
+  stab.Report(0,0); 
+
+  // Report(dt,1);
+
   timeStepper.Run(*this, o_q, startTime, finalTime);
 
   // output norm of final solution

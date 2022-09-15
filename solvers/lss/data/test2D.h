@@ -24,51 +24,24 @@ SOFTWARE.
 
 */
 
-#include "lss.hpp"
 
-int main(int argc, char **argv){
-
-  // start up MPI
-  Comm::Init(argc, argv);
-
-  LIBP_ABORT("Usage: ./lssMain setupfile", argc!=2);
-
-{ /*Scope so everything is destructed before MPI_Finalize */
-  comm_t comm(Comm::World().Dup());
-
-  //create default settings
-  platformSettings_t platformSettings(comm);
-  meshSettings_t meshSettings(comm);
-  stabSettings_t stabSettings(comm);
-  lssSettings_t lssSettings(comm);
-
-
-
-  //load settings from file
-  lssSettings.parseFromFile(platformSettings, meshSettings, stabSettings,
-                            argv[1]);
-
-  // set up platform
-  platform_t platform(platformSettings);
-
-  platformSettings.report();
-  meshSettings.report();
-  stabSettings.report();
-  lssSettings.report();
-
-
-  // set up mesh
-  mesh_t mesh(platform, meshSettings, comm);
-  stab_t stab(platform, mesh, stabSettings);
-
-  // set up level set solver
-  lss_t lss(platform, mesh, stab, lssSettings);
-  // run
-  lss.Run();
-
+// Level-Set function
+#define lssInitialConditions2D(t, x, y, q) \
+{                                       \
+  const dfloat xc = 0.5;           \
+  const dfloat yc = 0.5;         \
+  const dfloat rc = 0.5;          \
+  (*q) = (x + y)<=1.0 ? 1 :-1 ; \
 }
+  // (*q) =sqrt((x-xc)*(x-xc) + (y-yc)*(y-yc))-rc;  \
 
-  // close down MPI
-  Comm::Finalize();
-  return LIBP_SUCCESS;
+// Boundary conditions
+/* wall 1, outflow 2 */
+#define lssDirichletConditions2D(bc, t, x, y, nx, ny, qM, qB) \
+{                                       \
+  if(bc==1){                            \
+    *(qB) = qM;                        \
+  } else if(bc==2){                     \
+    *(qB) = qM;                         \
+  }                                     \
 }

@@ -130,6 +130,7 @@ void lssSettings_t::report() {
 
 void lssSettings_t::parseFromFile(platformSettings_t& platformSettings,
                                   meshSettings_t& meshSettings,
+                                  stabSettings_t& stabSettings,
                                   const std::string filename) {
   //read all settings from file
   settings_t s(comm);
@@ -143,6 +144,8 @@ void lssSettings_t::parseFromFile(platformSettings_t& platformSettings,
       platformSettings.changeSetting(name, val);
     else if (meshSettings.hasSetting(name))
       meshSettings.changeSetting(name, val);
+    else if (stabSettings.hasSetting(name))
+      stabSettings.changeSetting(name, val);
     else if (hasSetting(name)) //self
       changeSetting(name, val);
     else  {

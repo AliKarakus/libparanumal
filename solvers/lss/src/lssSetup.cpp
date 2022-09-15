@@ -26,14 +26,16 @@ SOFTWARE.
 
 #include "lss.hpp"
 
-void lss_t::Setup(platform_t& _platform, mesh_t& _mesh,
+void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab, 
                    lssSettings_t& _settings){
 
   platform = _platform;
   mesh = _mesh;
+  stab = _stab; 
   comm = mesh.comm;
   settings = _settings;
-  
+
+
   dlong Nlocal = mesh.Nelements*mesh.Np;
   dlong Nhalo  = mesh.totalHaloPairs*mesh.Np;
 
@@ -205,6 +207,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh,
       fileName   = oklFilePrefix + "lssSetFlowField3D" + oklFileSuffix;
       kernelName = "lssSetFlowField3D";
     }
+
     setFlowFieldKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
 
   }else if(redistance){
@@ -238,15 +241,8 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh,
 
     kernelName = "redistanceInitialHistoryENO3"; 
     timeInitialHistoryKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
+    }
   }
-
-    
-
-
-
-
-  }
-
 
   // kernels from initialization files
   if (mesh.dim==2) {
@@ -257,8 +253,5 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh,
     kernelName = "lssInitialCondition3D";    
   }  
   initialConditionKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
-  
-  
-
 
 }

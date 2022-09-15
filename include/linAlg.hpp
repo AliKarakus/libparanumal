@@ -155,6 +155,9 @@ class linAlg_t {
   static void matrixInverse(const int N, memory<double> A);
   static void matrixInverse(const int N, memory<float> A);
 
+  static void matrixPseudoInverse(const int M, const int N, memory<double> A);
+  static void matrixPseudoInverse(const int M, const int N, memory<float> A);
+
   static double matrixConditionNumber(const int N, const memory<double> A);
   static float  matrixConditionNumber(const int N, const memory<float> A);
 

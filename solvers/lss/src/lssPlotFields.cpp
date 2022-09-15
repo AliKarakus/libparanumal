@@ -112,6 +112,36 @@ void lss_t::PlotFields(memory<dfloat> Q, const std::string fileName){
     }
     fprintf(fp, "       </DataArray>\n");
   }
+
+
+ if (q.length()!=0) {
+    // write out pressure
+    fprintf(fp, "        <DataArray type=\"Float32\" Name=\"qp\" Format=\"ascii\">\n");
+    for(dlong e=0;e<mesh.Nelements;++e){
+      mesh.PlotInterp(q + 0*mesh.Np  + e*mesh.Np*2, Iu, scratch);
+
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        fprintf(fp, "%g\n", Iu[n]);
+      }
+    }
+    fprintf(fp, "       </DataArray>\n");
+  }
+
+if (q.length()!=0) {
+    // write out pressure
+    fprintf(fp, "        <DataArray type=\"Float32\" Name=\"qm\" Format=\"ascii\">\n");
+    for(dlong e=0;e<mesh.Nelements;++e){
+      mesh.PlotInterp(q + 1*mesh.Np  + e*mesh.Np*2, Iu, scratch);
+
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        fprintf(fp, "%g\n", Iu[n]);
+      }
+    }
+    fprintf(fp, "       </DataArray>\n");
+  }
+
   fprintf(fp, "     </PointData>\n");
 
 

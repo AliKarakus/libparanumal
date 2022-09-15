@@ -91,7 +91,9 @@ if(redistance){
 
 void lss_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_RHS, const dfloat T){
 
-// std::cout<<"lssPostStage is called"<<std::endl; 
+ stab.StabilizerApply(o_Q, o_RHS, T);
+
+  // stab.Report(0,0); 
 
 }
 

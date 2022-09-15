@@ -2,8 +2,9 @@
 2.0
 
 [DATA FILE]
+#data/test2D.h
 #data/lssVortex2D.h
-data/lssCircle3D.h
+data/lssCircle2D.h
 #data/lssSBRotation.h
 
 [MESH FILE]
@@ -11,19 +12,16 @@ data/lssCircle3D.h
 BOX
 
 [MESH DIMENSION]
-3
+2
 
 [ELEMENT TYPE] # number of edges
-6
+3
 
 [BOX NX]
-20
+40
 
 [BOX NY]
-20
-
-[BOX NZ]
-20
+40
 
 [BOX DIMX]
 4
@@ -31,14 +29,11 @@ BOX
 [BOX DIMY]
 4
 
-[BOX DIMZ]
-4
-
 [BOX BOUNDARY FLAG]
 1
 
 [POLYNOMIAL DEGREE]
-3
+5
 
 [THREAD MODEL]
 CUDA
@@ -67,6 +62,24 @@ COMPRESSIBLE
 ENO2
 #ENO3
 
+# HJS:1  CNS:2  INS:3 
+[STABILIZATION SOLVER TYPE]
+1
+
+# Klockner: 1 Persson: 2
+[DETECTOR TYPE]
+2
+
+# Filter: 1, Limiter: 2, Artdiff: 3, Subcell: 4
+[STAB TYPE]
+1
+
+[FILTER CUTOFF]
+1
+
+# Even Number i.e. 2, 4, 8,...
+[FILTER ORDER]
+4
 
 [TIME INTEGRATOR]
 #DOPRI5

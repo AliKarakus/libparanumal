@@ -30,6 +30,7 @@ SOFTWARE.
 #include "core.hpp"
 #include "platform.hpp"
 #include "mesh.hpp"
+#include "stab.hpp"
 #include "solver.hpp"
 #include "timeStepper.hpp"
 #include "linAlg.hpp"
@@ -44,6 +45,7 @@ public:
   void report();
   void parseFromFile(platformSettings_t& platformSettings,
                      meshSettings_t& meshSettings,
+                     stabSettings_t& stabSettings,
                      const std::string filename);
 };
 
@@ -62,6 +64,7 @@ public:
   // dfloat eps; // regularization thickness for level set function
 
   mesh_t mesh;
+  stab_t stab; 
   timeStepper_t timeStepper;
 
   ogs::halo_t qTraceHalo;
@@ -126,13 +129,13 @@ public:
  
 
   lss_t() = default;
-  lss_t(platform_t &_platform, mesh_t &_mesh,
+  lss_t(platform_t &_platform, mesh_t &_mesh, stab_t _stab, 
               lssSettings_t& _settings) {
-    Setup(_platform, _mesh, _settings);
+    Setup(_platform, _mesh, _stab, _settings);
   }
 
   //setup
-  void Setup(platform_t& platform, mesh_t& mesh,
+  void Setup(platform_t& platform, mesh_t& mesh, stab_t _stab, 
              lssSettings_t& settings);
 
   void Run();

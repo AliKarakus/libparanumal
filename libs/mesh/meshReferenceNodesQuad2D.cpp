@@ -46,6 +46,8 @@ void mesh_t::ReferenceNodesQuad2D(){
   LumpedMassMatrixQuad2D(N, gllw, MM);
   invLumpedMassMatrixQuad2D(N, gllw, invMM);
 
+  o_MM = platform.malloc<dfloat>(MM);
+
   // D matrix
   Dmatrix1D(N, gllz, gllz, D);
   o_D = platform.malloc<dfloat>(D);
