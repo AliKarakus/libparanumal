@@ -28,10 +28,9 @@ SOFTWARE.
 // Level-Set function
 #define lssInitialConditions2D(t, x, y, q) \
 {                                       \
-  const dfloat xc = 0.0;           \
-  const dfloat yc = 0.0;         \
-  const dfloat rc = 1.0;          \
-  const dfloat ac = 0.70;          \
+  const dfloat xc = 0.5;           \
+  const dfloat yc = 0.5;         \
+  const dfloat rc = 0.5;          \
   (*q) = (x-xc)*(x-xc) + (y-yc)*(y-yc) - rc ; \
 }
 

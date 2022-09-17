@@ -2,33 +2,45 @@
 2.0
 
 [DATA FILE]
-data/test2D.h
+#data/test2D.h
+#data/test3D.h
 #data/lssVortex2D.h
 #data/lssCircle2D.h
+data/lssCircle3D.h
 #data/lssSBRotation.h
 
 [MESH FILE]
 #../../meshes/lssTri.msh
-../../meshes/lssQuad.msh
-#BOX
+#../../meshes/lssQuad.msh
+#../../meshes/lssTet.msh
+BOX
 
 [MESH DIMENSION]
-2
+3
 
 [ELEMENT TYPE] # number of edges
-4
+#4
+12
 
 [BOX NX]
-40
+11
 
 [BOX NY]
-40
+11
+
+[BOX NZ]
+11
+
 
 [BOX DIMX]
 4
 
 [BOX DIMY]
 4
+
+[BOX DIMZ]
+4
+
 
 [BOX BOUNDARY FLAG]
 1

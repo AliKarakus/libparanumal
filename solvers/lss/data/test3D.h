@@ -32,8 +32,11 @@ SOFTWARE.
   const dfloat yc = -1.0;         \
   const dfloat zc = -1.0;          \
   const dfloat rc = 1.0;          \
-  (*q) = (sqrt((x-xc)*(x-xc) +(y-yc)*(y-yc)+(z-zc)*(z-zc))-rc) <=0.0 ? 1 :-1 ; \
+  (*q) = (x+y+z)<=1.0 ? 1 :-1 ; \
 }
+
+
+  // (*q) = (sqrt((x-xc)*(x-xc) +(y-yc)*(y-yc)+(z-zc)*(z-zc))-rc) <=0.0 ? 1 :-1 ; \
 
   // (*q) = (sqrt((x-xc)*(x-xc) +(y-yc)*(y-yc)+(z-zc)*(z-zc))-rc) <=0.0 ? 1 :-1 ; \
 

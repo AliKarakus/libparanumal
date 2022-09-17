@@ -32,7 +32,6 @@ SOFTWARE.
   const dfloat yc = 0.0f;         \
   const dfloat zc = 0.0f;         \
   const dfloat rc = 1.0f;          \
-  const dfloat ac = 0.70;          \
   (*q) = (x-xc)*(x-xc) + (y-yc)*(y-yc) + (z-zc)*(z-zc) - rc ; \
 }
 

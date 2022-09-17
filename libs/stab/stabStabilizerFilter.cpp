@@ -46,7 +46,6 @@ void stab_t::StabilizerSetupHJSFilter(){
       FilterMatrixTri2D(mesh.N, Nc, Sc, filterM); 
       filterMT.malloc(filterM.length()); 
       linAlg_t::matrixTranspose(mesh.Np, mesh.Np, filterM, mesh.Np, filterMT, mesh.Np);
-
       break; 
     case Mesh::QUADRILATERALS:
       FilterMatrix1D(mesh.N, Nc, Sc, filterM); 
@@ -54,18 +53,19 @@ void stab_t::StabilizerSetupHJSFilter(){
       linAlg_t::matrixTranspose(mesh.Nq, mesh.Nq, filterM, mesh.Nq, filterMT, mesh.Nq);
       break; 
     case Mesh::TETRAHEDRA:
-      // ModeInfoKlocknerTet3D(mesh.N, modeMap); 
-      // mesh.VandermondeTet3D(mesh.N, mesh.r, mesh.s, mesh.t, invV);
+      FilterMatrixTet3D(mesh.N, Nc, Sc, filterM); 
+      filterMT.malloc(filterM.length()); 
+      linAlg_t::matrixTranspose(mesh.Np, mesh.Np, filterM, mesh.Np, filterMT, mesh.Np);
       break; 
     case Mesh::HEXAHEDRA:
-      // ModeInfoKlocknerHex3D(mesh.N, modeMap); 
-      // mesh.VandermondeHex3D(mesh.N, mesh.r, mesh.s, mesh.t, invV);
+      FilterMatrix1D(mesh.N, Nc, Sc, filterM); 
+      filterMT.malloc(filterM.length()); 
+      linAlg_t::matrixTranspose(mesh.Nq, mesh.Nq, filterM, mesh.Nq, filterMT, mesh.Nq);
       break; 
   }
-
+  // Allocate Filter Matrix on Device 
   o_filterM = platform.malloc<dfloat>(filterMT); 
   
-
   int blockMax = 256;
   if (platform.device.mode() == "CUDA") blockMax = 512;
 
@@ -99,18 +99,12 @@ void stab_t::StabilizerApplyHJSFilter(deviceMemory<dfloat>& o_Q, deviceMemory<df
 
 // Detect Element ->o_elist!!!!
 DetectorApply(o_Q, o_RHS, T); 
-// Report(T, 0);
 
 // Filter solution @ o_eList
 filterKernel(mesh.Nelements, 
              o_eList, 
              o_filterM, 
              o_Q); 
-
-
-
-// std::cout<<"I am here in apply "<< std::endl; 
-
 }
 
 
@@ -147,6 +141,52 @@ void stab_t::FilterMatrixTri2D(int _N, int _Nc, int _sp, memory<dfloat>& _filter
 
   memory<dfloat> V; 
   mesh.VandermondeTri2D(_N, tmp_r, tmp_s, V);  
+  
+  _filterMatrix.malloc(_Np*_Np);
+  linAlg_t::matrixRightSolve(_Np, _Np, filterDiag, _Np, _Np, V, tmp);
+  for(int n=0; n<_Np; n++){
+    for(int m=0; m<_Np; m++){
+      dfloat sum = 0; 
+      for(int i=0; i<_Np; i++){
+        sum += V[n*_Np + i]*tmp[i*_Np + m];
+      }
+      _filterMatrix[n*_Np + m] = sum; 
+    }
+  } 
+
+}
+
+
+void stab_t::FilterMatrixTet3D(int _N, int _Nc, int _sp, memory<dfloat>& _filterMatrix){
+  
+  dfloat alpha = -log(std::numeric_limits<dfloat>::epsilon() );
+
+  const int _Np = (_N+1)*(_N+2)*(_N+3)/6; 
+  const int _Nmodes1D = (_N+1);
+
+  // Compute Filter Operator
+  memory<dfloat> filterDiag(_Np*_Np, 0.0); 
+  for(int n=0; n<_Np; n++){ filterDiag[n*_Np + n] = 1.0; }
+
+  int sk = 0; 
+  for(int i=0; i<_Nmodes1D; i++){
+    for(int j=0; j<(_Nmodes1D-i); j++){
+      for(int k=0; k<(_Nmodes1D-i-j); k++){
+        if((i+j+k)>=_Nc){
+         // filterDiag[sk*_Np + sk] = 0.0; 
+         filterDiag[sk*_Np + sk] = exp(-alpha * pow(dfloat(i+j+k -_Nc)/dfloat(_N-_Nc), dfloat(_sp)));
+        }
+      sk++; 
+     }
+   }
+ }
+
+  // Compute Filter Matrix:  V* filterdiag * invV = V*(filterdiag/V); 
+  memory<dfloat> tmp(_Np*_Np), tmp_r(_Np), tmp_s(_Np), tmp_t(_Np); 
+  mesh.NodesTet3D(_N, tmp_r, tmp_s, tmp_t);
+
+  memory<dfloat> V; 
+  mesh.VandermondeTet3D(_N, tmp_r, tmp_s, tmp_t, V);  
   
   _filterMatrix.malloc(_Np*_Np);
   linAlg_t::matrixRightSolve(_Np, _Np, filterDiag, _Np, _Np, V, tmp);
