@@ -34,9 +34,9 @@ void stab_t::StabilizerSetupHJSFilter(){
 
   settings.getSetting("FILTER CUTOFF", Nc);
   settings.getSetting("FILTER ORDER",  Sc);
+  // std::cout<<"Cutoff: "<< Nc << std::endl; 
+  // std::cout<<"Order: "<< Sc << std::endl; 
 
-  std::cout<<"Cutoff: "<< Nc << std::endl; 
-  std::cout<<"Order: "<< Sc << std::endl; 
 
 
   memory<dfloat> filterMT; 
@@ -133,8 +133,6 @@ void stab_t::FilterMatrixTri2D(int _N, int _Nc, int _sp, memory<dfloat>& _filter
     }
   }
 
-
-
   // Compute Filter Matrix:  V* filterdiag * invV = V*(filterdiag/V); 
   memory<dfloat> tmp(_Np*_Np), tmp_r(_Np), tmp_s(_Np); 
   mesh.NodesTri2D(_N, tmp_r, tmp_s);
@@ -208,7 +206,7 @@ void stab_t::FilterMatrix1D(int _N, int _Nc, int _sp, memory<dfloat>& _filterMat
   // if(_Nc==0){ LIBP_FORCE_ABORT("Filter can not alter constant mode");}
 
   dfloat alpha = -log(std::numeric_limits<dfloat>::epsilon() );
-  
+
   const int _Np = (_N+1); 
 
   // Compute Filter Operator
@@ -223,7 +221,6 @@ void stab_t::FilterMatrix1D(int _N, int _Nc, int _sp, memory<dfloat>& _filterMat
       }
       sk++; 
     }
-
 
   // Compute Filter Matrix:  V* filterdiag * invV = V*(filterdiag/V); 
   memory<dfloat> tmp(_Np*_Np), tmp_r(_Np), tmp_w(_Np); 
