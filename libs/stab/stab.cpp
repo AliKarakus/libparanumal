@@ -42,7 +42,9 @@ void stab_t::Setup(platform_t& _platform, mesh_t &_mesh, stabSettings_t& _settin
   settings.getSetting("DETECTOR TYPE", dType);
   settings.getSetting("STAB TYPE", stType);
 
-  SetTypes(Stab::SolverType(sType), Stab::DetectorType(dType), Stab::StabType(stType));
+  SetTypes(Stab::SolverType(sType), 
+           Stab::DetectorType(dType), 
+           Stab::StabType(stType));
 
 
   //setup linear algebra module

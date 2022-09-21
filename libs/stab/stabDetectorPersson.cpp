@@ -37,8 +37,16 @@ void stab_t::DetectorSetupHJSPersson(){
   // Project to modal space spans N-1
   projectNm1.malloc(mesh.Np*mesh.Np);
 
+  // 
   qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
   o_qd = platform.malloc<dfloat>(qd); 
+
+  // Compute Art. Diff. Activation function as well!!!!
+  // if(stabType==Stab::ARTDIFF){
+  viscRamp.malloc(mesh.Nelements*dNfields, 0.0); 
+  o_viscRamp = platform.malloc<dfloat>(viscRamp); 
+  // }
+
 
   memory<dfloat> V, invV, tmp, truncModes;
   // Compute 2D to 1D mode map 
@@ -127,7 +135,8 @@ detectKernel(mesh.Nelements,
              mesh.o_vgeo, 
              mesh.o_MM, 
              o_projectNm1, 
-             o_qd, 
+             o_qd,
+             o_viscRamp, 
              o_eList); 
 
 }
@@ -209,47 +218,6 @@ void stab_t::ModeInfoPerssonHex3D(int _N, memory<dfloat>& _truncModes){
         }
       }
   }
-
-
-
-// // Least squares fit for 1D modes
-// void stab_t::LeastSquaresFitKlockner(int _N, memory<dfloat>& _LSF){
-//   memory<dfloat>  tmp(2*_N); 
-//   _LSF.malloc( _N); 
-
-//   for(int n=0; n<_N; n++){
-//     const dfloat logmode = log10(n+1); 
-//     tmp[2*n + 0] = logmode; 
-//     tmp[2*n + 1] = 1.0; 
-//   }
-
-//   linAlg_t::matrixPseudoInverse(_N, 2, tmp);
-
-//   for(int n=0; n<_N; n++){
-//     _LSF[n] = tmp[n];
-//   }
-// }
-
-
-// //  baseline decay (squared)
-// void stab_t::BaseLineDecayKlockner(int _N, memory<dfloat>& _BLD){
-//   _BLD.malloc(_N+1);   
-
-//   dfloat bsum = 0.0; 
-//   for(int j=1; j<_N+1; j++)
-//     bsum +=1.0/pow(j, 2*_N); 
-
-//   bsum = 1.0/sqrt(bsum); 
-
-//   BLD[0] = 0.0; 
-//   // baseline decay (squared) 
-//   for(int n=1; n<_N+1; n++){
-//     const dfloat bdecay = bsum*1.0/(pow(n,_N));
-//     _BLD[n] = bdecay*bdecay;
-//   }
-// }
-
-
 
 
 

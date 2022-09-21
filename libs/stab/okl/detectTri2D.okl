@@ -41,8 +41,9 @@
 				    @restrict const dfloat * LSF,
 				    @restrict const dfloat * BLD,
 				    @restrict const dfloat * Q, 
+				    @restrict 			dfloat * artVisc, 
 				    @restrict dlong *  ElementList){
-#define p_Nel 4
+#define p_Nel 2
 #if BLDEC==1
 #define reduce02(s_L2, NT)				\
   if(NT<p_Nq){						\
@@ -75,11 +76,11 @@
     for(int es=0;es<p_Nel;++es;@inner(1)){
       
       for(int n=0; n<p_Nq; n++; @inner(0)){
-	dlong e = eo+es;
-	if(es==0){
-	  s_LSF[n] = LSF[n];
-	  s_BLD[n] = BLD[n];
-	}
+				dlong e = eo+es;
+				if(es==0){
+				  s_LSF[n] = LSF[n];
+				  s_BLD[n] = BLD[n];
+				}
 
   		
 	int m = n + es*p_Nq;
@@ -165,6 +166,9 @@
       }
     }
 
+
+
+
 #if BLDEC==1
     // reduce02(s_L2, 128);
     reduce02(s_L2,  64);
@@ -237,8 +241,25 @@
 	      }
 
 	      mincoeff = mymin(fabs(coeff), fabs(mincoeff)); 
-				     
-	      ElementList[e*p_dNfields + fld] = (mincoeff*mincoeff)<9.0? 1 : 0;	  
+	     
+
+	      // 
+	      const dfloat sk =fabs(mincoeff); 				     
+	      ElementList[e*p_dNfields + fld] = sk < 3.0 ? 1 : 0;	 
+
+	      // It can be tuned!!!!
+	      const dfloat s0    = 2.0;  
+	      const dfloat kappa = 1.0;  
+
+	      // not that 1 - v(sk) of Persson
+    	if(sk<(s0-kappa))
+  			artVisc[e*p_dNfields + fld] = 1.0; 
+  		else if(sk> (s0+kappa))
+  			artVisc[e*p_dNfields + fld] = 0.0; 
+  		else 
+  			artVisc[e*p_dNfields + fld] = 1.0 - 0.5*( 1.f+ sin( 0.5* M_PI*(sk-s0)/ kappa)); 
+
+
 	    }
 	  }
 
@@ -256,7 +277,8 @@
 				    @restrict const dfloat * MM,
 				    @restrict const dfloat * projectMn1,
 				    @restrict const dfloat * Q, 
-				    @restrict dlong *  ElementList){
+				    @restrict 		  dfloat * artVisc, 
+				    @restrict       dlong *  ElementList){
 #define p_Nel 1
 
 
@@ -382,12 +404,23 @@
 	dlong e = eo+es;
 	if(e<Nelements){
 	  if(n<p_dNfields){
-	    const dfloat sk = 0.5*log10f((float)(s_L2QT[es][n][0]/s_L2Q[es][n][0]));
-	    const dfloat N = p_N; 
-	    const dfloat s0  = -4.f*log10f( (float) (N) );	    
-	    ElementList[e*p_dNfields + n] = sk >= s0  ? 1: 0; 
-	  }
-	}
+	    			const dfloat sk = 0.5*log10f((float)(s_L2QT[es][n][0]/s_L2Q[es][n][0]));
+	    			const dfloat N = p_N; 
+
+	    			// log (1/N^4)
+	    			const dfloat s0  = -4.f*log10f( (float) (N) );	    
+	    			ElementList[e*p_dNfields + n] = sk >= s0  ? 1: 0; 
+
+	    			const dfloat kappa = 1.0; 
+
+	    			if(sk<(s0-kappa))
+	    				artVisc[e*p_dNfields + n] = 0.f; //0.f; 
+	    			else if(sk > (s0+kappa) )
+	    				artVisc[e*p_dNfields + n] = 1.0; 
+	    			else 
+	    				artVisc[e*p_dNfields + n] = 0.5*(1.f + sin( 0.5* M_PI*(sk-s0)/ kappa)); 
+	  			}
+				}
       }
     }
 

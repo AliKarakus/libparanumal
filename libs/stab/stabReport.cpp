@@ -39,11 +39,19 @@ void stab_t::Report(dfloat time, int tstep){
 
   if (settings.compareSetting("STAB OUTPUT TO FILE","TRUE")) {
     char fname[BUFSIZ];
-    sprintf(fname, "detector_%04d_%04d.vtu", mesh.rank, frame++);
+    sprintf(fname, "detector_%04d_%04d.vtu", mesh.rank, frame);
 	
-	// copy data back to host
+	  // copy data back to host
   	o_eList.copyTo(eList);
+    if(viscRamp.length()!=0){o_viscRamp.copyTo(viscRamp);}
   	PlotElements(eList, std::string(fname));
+
+    sprintf(fname, "StabField_%04d_%04d.vtu", mesh.rank, frame);
+    if(visc.length()!=0){o_visc.copyTo(visc);}    
+    if(qd.length()!=0){o_qd.copyTo(qd);}    
+    PlotFields(qd, fname);
+    frame++; 
+
   }
 }
 
@@ -112,6 +120,24 @@ void stab_t::PlotElements(memory<dlong> ElementList, const std::string fileName)
   	}
  	fprintf(fp, "       </DataArray>\n");
   }
+
+
+
+  if(viscRamp.length()!=0){
+ fprintf(fp, "        <DataArray type=\"Float32\" Name=\"artViscFunc\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+  for(dlong e=0;e<mesh.Nelements;++e){
+      for(int n=0;n<mesh.Nverts;++n){
+          fprintf(fp, "       ");
+           for(int fld=0; fld<dNfields; fld++){
+             fprintf(fp, "%g ", dfloat(viscRamp[e*dNfields + fld]));
+          }
+          fprintf(fp, "\n");
+      }
+    }
+  fprintf(fp, "       </DataArray>\n");
+  }
+
+
   fprintf(fp, "     </PointData>\n");
 
 
@@ -157,6 +183,171 @@ void stab_t::PlotElements(memory<dlong> ElementList, const std::string fileName)
   fprintf(fp, "</VTKFile>\n");
   fclose(fp);
 }
+
+
+
+
+
+// interpolate data to plot nodes and save to file (one per processor)
+void stab_t::PlotFields(memory<dfloat> Q, const std::string fileName){
+
+FILE *fp;
+
+  fp = fopen(fileName.c_str(), "w");
+
+  fprintf(fp, "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"BigEndian\">\n");
+  fprintf(fp, "  <UnstructuredGrid>\n");
+  fprintf(fp, "    <Piece NumberOfPoints=\"%d\" NumberOfCells=\"%d\">\n",
+          mesh.Nelements*mesh.plotNp,
+          mesh.Nelements*mesh.plotNelements);
+
+  // write out nodes
+  fprintf(fp, "      <Points>\n");
+  fprintf(fp, "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" Format=\"ascii\">\n");
+
+  //scratch space for interpolation
+  size_t Nscratch = std::max(mesh.Np, mesh.plotNp);
+  memory<dfloat> scratch(2*Nscratch);
+
+  memory<dfloat> Ix(mesh.plotNp);
+  memory<dfloat> Iy(mesh.plotNp);
+  memory<dfloat> Iz(mesh.plotNp);
+
+  // compute plot node coordinates on the fly
+  for(dlong e=0;e<mesh.Nelements;++e){
+    mesh.PlotInterp(mesh.x + e*mesh.Np, Ix, scratch);
+    mesh.PlotInterp(mesh.y + e*mesh.Np, Iy, scratch);
+    if(mesh.dim==3)
+      mesh.PlotInterp(mesh.z + e*mesh.Np, Iz, scratch);
+
+    if (mesh.dim==2) {
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        fprintf(fp, "%g %g %g\n", Ix[n],Iy[n],0.0);
+      }
+    } else {
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        fprintf(fp, "%g %g %g\n", Ix[n],Iy[n],Iz[n]);
+      }
+    }
+  }
+  fprintf(fp, "        </DataArray>\n");
+  fprintf(fp, "      </Points>\n");
+
+  memory<dfloat> Iu(mesh.plotNp);
+  memory<dfloat> Iv(mesh.plotNp);
+  memory<dfloat> Iw(mesh.plotNp);
+  fprintf(fp, "      <PointData Scalars=\"scalars\">\n");
+ 
+  if (Q.length()!=0) {
+    // write out pressure
+     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"DetectedField\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+    for(dlong e=0;e<mesh.Nelements;++e){
+      mesh.PlotInterp(Q + 0*mesh.Np + e*mesh.Np*dNfields, Iu, scratch);
+       if(dNfields>1)
+        mesh.PlotInterp(Q + 1*mesh.Np  + e*mesh.Np*dNfields, Iv, scratch);
+
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        if(dNfields==1)
+          fprintf(fp, "%g \n", Iu[n]);
+        else if(dNfields==2)
+          fprintf(fp, "%g %g\n", Iu[n], Iv[n]);
+      }
+    }
+    fprintf(fp, "       </DataArray>\n");
+  }
+
+
+
+ if (visc.length()!=0) {
+  // write out pressure
+     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Viscosity\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+    for(dlong e=0;e<mesh.Nelements;++e){
+
+      mesh.PlotInterp(visc + 0*mesh.Np  + e*mesh.Np*dNfields, Iu, scratch);
+
+      if(dNfields>1)
+        mesh.PlotInterp(visc + 1*mesh.Np  + e*mesh.Np*dNfields, Iv, scratch);
+      if(dNfields>2)
+        mesh.PlotInterp(visc + 2*mesh.Np  + e*mesh.Np*dNfields, Iw, scratch);
+
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        fprintf(fp, "       ");
+        if(dNfields==1)
+          fprintf(fp, "%g \n", Iu[n]);
+        else if(dNfields==2)
+          fprintf(fp, "%g %g\n", Iu[n], Iv[n]);
+        else if(dNfields==3)
+          fprintf(fp, "%g %g %g\n", Iu[n], Iv[n], Iw[n]);
+      }
+    }
+    fprintf(fp, "       </DataArray>\n");
+  }
+
+
+// if (q.length()!=0) {
+//     // write out pressure
+//     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"qm\" Format=\"ascii\">\n");
+//     for(dlong e=0;e<mesh.Nelements;++e){
+//       mesh.PlotInterp(q + 1*mesh.Np  + e*mesh.Np*2, Iu, scratch);
+
+//       for(int n=0;n<mesh.plotNp;++n){
+//         fprintf(fp, "       ");
+//         fprintf(fp, "%g\n", Iu[n]);
+//       }
+//     }
+//     fprintf(fp, "       </DataArray>\n");
+//   }
+
+  fprintf(fp, "     </PointData>\n");
+
+
+
+  fprintf(fp, "    <Cells>\n");
+  fprintf(fp, "      <DataArray type=\"Int32\" Name=\"connectivity\" Format=\"ascii\">\n");
+
+  for(dlong e=0;e<mesh.Nelements;++e){
+    for(int n=0;n<mesh.plotNelements;++n){
+      fprintf(fp, "       ");
+      for(int m=0;m<mesh.plotNverts;++m){
+        fprintf(fp, "%d ", e*mesh.plotNp + mesh.plotEToV[n*mesh.plotNverts+m]);
+      }
+      fprintf(fp, "\n");
+    }
+  }
+  fprintf(fp, "        </DataArray>\n");
+
+  fprintf(fp, "        <DataArray type=\"Int32\" Name=\"offsets\" Format=\"ascii\">\n");
+  dlong cnt = 0;
+  for(dlong e=0;e<mesh.Nelements;++e){
+    for(int n=0;n<mesh.plotNelements;++n){
+      cnt += mesh.plotNverts;
+      fprintf(fp, "       ");
+      fprintf(fp, "%d\n", cnt);
+    }
+  }
+  fprintf(fp, "       </DataArray>\n");
+
+  fprintf(fp, "       <DataArray type=\"Int32\" Name=\"types\" Format=\"ascii\">\n");
+  for(dlong e=0;e<mesh.Nelements;++e){
+    for(int n=0;n<mesh.plotNelements;++n){
+      if(mesh.dim==2)
+        fprintf(fp, "5\n");
+      else
+        fprintf(fp, "10\n");
+    }
+  }
+  fprintf(fp, "        </DataArray>\n");
+  fprintf(fp, "      </Cells>\n");
+  fprintf(fp, "    </Piece>\n");
+  fprintf(fp, "  </UnstructuredGrid>\n");
+  fprintf(fp, "</VTKFile>\n");
+  fclose(fp);
+}
+
 
 
 

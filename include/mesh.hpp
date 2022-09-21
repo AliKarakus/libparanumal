@@ -674,6 +674,7 @@ class mesh_t {
   // Basic codes for generating nodes, polynomials, matrices, etc.
 
  public:
+
   //1D
   static void Nodes1D(const int _N, memory<dfloat>& _r);
   static void EquispacedNodes1D(const int _N, memory<dfloat>& _r);

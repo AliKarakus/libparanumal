@@ -45,7 +45,7 @@ stabSettings_t::stabSettings_t(comm_t _comm):
   newSetting("STAB TYPE",
              "1",
              "Stabilization type: FILTER:1, LIMITER:2, ART_DIFF:3, SUBCELL:4",
-             {"1", "2"});
+             {"1", "2", "3", "4"});
 
   newSetting("FILTER CUTOFF",
              "1",

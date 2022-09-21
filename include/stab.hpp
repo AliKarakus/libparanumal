@@ -92,6 +92,11 @@ class stab_t {
   memory<dfloat> qd;
   deviceMemory<dfloat> o_qd; 
 
+  // Memory for artificial Viscosity Activation Function 
+  // just in case it is needed!!!!
+  memory<dfloat> viscRamp; 
+  deviceMemory<dfloat> o_viscRamp; 
+
   // Klockner Detector
   memory<int> modeMap; 
   deviceMemory<int> o_modeMap;
@@ -118,6 +123,27 @@ class stab_t {
   /*****************************/
   /*   LIMITER STABILIZATION    */
   /*****************************/
+
+
+
+
+
+
+  /*******************************************/
+  /*   ARTIFICIAL DIFFUSION STABILIZATION    */
+  /*******************************************/
+  // Memory for artificial Viscosity Activation Function 
+  memory<dfloat> viscScale; 
+  deviceMemory<dfloat> o_viscScale; 
+
+  memory<dfloat> visc; 
+  deviceMemory<dfloat> o_visc; 
+
+  kernel_t computeViscosityKernel; 
+
+
+
+
 
 
 
@@ -179,9 +205,6 @@ class stab_t {
         break;
     } 
   }
-
-
-
   
 
   void DetectorApplyHJS(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
@@ -226,8 +249,7 @@ class stab_t {
          LIBP_FORCE_ABORT("Limiter is not implemented yet");
         break;
       case Stab::ARTDIFF:
-        // StabilizerSetupHJSArtdiff();
-        LIBP_FORCE_ABORT("Artificial Diffusion is not implemented yet");
+        StabilizerSetupHJSArtdiff();
         break;
       case Stab::SUBCELL:
         // StabilizerSetupHJSSubcell();
@@ -265,7 +287,7 @@ class stab_t {
          LIBP_FORCE_ABORT("Limiter is not implemented yet");
         break;
       case Stab::ARTDIFF:
-        LIBP_FORCE_ABORT("Artificial Diffusion is not implemented yet");
+        StabilizerApplyHJSArtdiff(o_Q, o_RHS, T);         
         break;
       case Stab::SUBCELL:
         LIBP_FORCE_ABORT("FV-Subcell is not implemented yet");
@@ -279,6 +301,7 @@ class stab_t {
    void Report(dfloat time, int tstep); 
    dlong GetElementNumber(deviceMemory<dlong>& eList); 
    void PlotElements(memory<dlong> eList, const std::string fileName);
+   void PlotFields(memory<dfloat> Q, const std::string fileName);
 
 
    void DetectorSetupHJSKlockner(); 
@@ -313,6 +336,13 @@ class stab_t {
    void StabilizerSetupHJSFilter(); 
    void StabilizerApplyHJSFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
+   void StabilizerSetupHJSArtdiff(); 
+   void StabilizerApplyHJSArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+    
+   dfloat ElementViscosityScaleTri2D(dlong e);
+   dfloat ElementViscosityScaleQuad2D(dlong e);
+   dfloat ElementViscosityScaleTet3D(dlong e);
+   dfloat ElementViscosityScaleHex3D(dlong e);
 
 
  

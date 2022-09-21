@@ -37,6 +37,13 @@ void stab_t::DetectorSetupHJSKlockner(){
   qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
   o_qd = platform.malloc<dfloat>(qd); 
 
+
+  // Compute Art. Diff. Activation function as well!!!!
+  // if(stabType==Stab::ARTDIFF){
+    viscRamp.malloc(mesh.Nelements*dNfields, 0.0); 
+    o_viscRamp = platform.malloc<dfloat>(viscRamp); 
+  // }
+
   memory<dfloat> invV, invVT;
   // Compute 2D to 1D mode map 
   switch(mesh.elementType){
@@ -117,6 +124,7 @@ detectKernel(mesh.Nelements,
              o_LSF, 
              o_BLD, 
              o_qd, 
+             o_viscRamp, 
              o_eList); 
 
 }
