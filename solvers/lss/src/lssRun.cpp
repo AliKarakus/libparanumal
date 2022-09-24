@@ -87,25 +87,38 @@ void lss_t::Run(){
   dfloat dt = cfl/(vmax*(mesh.N+1.)*(mesh.N+1.));
   timeStepper.SetTimeStep(dt);
 
+  // // Test Detector
+  // stab.detectApply(o_q, o_q, 0.0); 
+
+  // stab.Report(0,0); 
+
+
+
   // Report(dt,0);
 
+  // // filterKernel(mesh.Nelements, 
+  // //              stab.o_eList, 
+  // //              stab.o_filterM, 
+  // //              o_q); 
+
+  // Report(dt,1);
+
   // Stabilize Initial Condition
-  stab.StabilizerApply(o_q, o_q, 0);
-  stab.Report(0,0); 
+  // stab.StabiliApply(o_q, o_q, 0);
 
   // Report(dt,1);
 
   timeStepper.Run(*this, o_q, startTime, finalTime);
 
-  // output norm of final solution
-  {
-    //compute q.M*q
-    mesh.MassMatrixApply(o_q, o_Mq);
+  // // output norm of final solution
+  // {
+  //   //compute q.M*q
+  //   mesh.MassMatrixApply(o_q, o_Mq);
 
-    dlong Nentries = mesh.Nelements*mesh.Np;
-    dfloat norm2 = sqrt(platform.linAlg().innerProd(Nentries, o_q, o_Mq, mesh.comm));
+  //   dlong Nentries = mesh.Nelements*mesh.Np;
+  //   dfloat norm2 = sqrt(platform.linAlg().innerProd(Nentries, o_q, o_Mq, mesh.comm));
 
-    if(mesh.rank==0)
-      printf("Solution norm = %17.15lg\n", norm2);
-  }
+  //   if(mesh.rank==0)
+  //     printf("Solution norm = %17.15lg\n", norm2);
+  // }
 }

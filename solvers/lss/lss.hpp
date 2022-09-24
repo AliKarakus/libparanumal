@@ -87,19 +87,7 @@ public:
   memory<dfloat> reconstructTime; 
   deviceMemory<dfloat> o_reconstructTime; 
 
-  // memory<dfloat> sgnq;
-  // memory<dfloat> ssgnq; // sign for subcell
-  // memory<dfloat> sq; 
-
-
-  // // dummy delete later
-  // dfloat * sface; 
-  // deviceMemory<dfloat> o_sface; 
-
-
-
-  // deviceMemory<dfloat> o_sgnq; 
-  // deviceMemory<dfloat> o_ssgnq, o_sq; 
+ 
 
   deviceMemory<dfloat> o_Mq;
 
@@ -126,6 +114,12 @@ public:
 
   kernel_t initialConditionKernel;
   kernel_t setFlowFieldKernel;
+
+  // Stabilization Related
+
+  kernel_t filterKernel; 
+  
+
  
 
   lss_t() = default;

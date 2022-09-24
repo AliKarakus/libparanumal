@@ -24,7 +24,7 @@
 
 */
 
-@kernel void filterHJSTri2D(const dlong Nelements,
+@kernel void filterTri2D(const dlong Nelements,
                             @restrict const  dlong  *  elementIds,
                             @restrict const  dfloat *  filterM,
                             @restrict        dfloat *  q){
@@ -32,13 +32,13 @@
   for(dlong e=0;e<Nelements;e++; @outer(0)){  // for all elements
 
     @shared dfloat s_q[p_sNfields][p_Np];
-    @exclusive int eid[p_sNfields];
+    @exclusive int eid[p_dNfields];
     @exclusive int elmActive;
 
     for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
         elmActive = 0; 
 
-        for(int fld=0; fld<p_sNfields;++fld){
+        for(int fld=0; fld<p_dNfields;++fld){
           eid[fld] = elementIds[e*p_dNfields + fld]; 
           // Active this element if it is detected for any field 
           if(eid[fld]>0){ elmActive=1; }
@@ -53,35 +53,35 @@
        }
       }
 
-    // make sure all node data is loaded into @shared
 
-      for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
-        if(elmActive){
-          dfloat r_qM[p_sNfields];
 
-         #pragma unroll p_sNfields
-         for (int fld=0;fld<p_sNfields;fld++)
-            r_qM[fld] = 0.0;
+    for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
+      if(elmActive){
+        dfloat r_qM[p_sNfields];
 
-          #pragma unroll p_Np
-          for (int k=0;k<p_Np;k++) {
-            const dfloat fmn = filterM[n+k*p_Np];
-            for (int fld=0;fld<p_sNfields;fld++){
-              if(eid[fld]>0){
-               r_qM[fld] += fmn*s_q[fld][k];
-              }
-            }
-          
-          }
+       #pragma unroll p_sNfields
+       for (int fld=0;fld<p_sNfields;fld++)
+          r_qM[fld] = 0.0;
 
-          const dlong qbase = e*p_Np*p_sNfields + n;
-          #pragma unroll p_sNfields
+        #pragma unroll p_Np
+        for (int k=0;k<p_Np;k++) {
+          const dfloat fmn = filterM[n+k*p_Np];
           for (int fld=0;fld<p_sNfields;fld++){
-            q[qbase+fld*p_Np] = eid[fld] > 0 ? r_qM[fld] : s_q[fld][n];
+            if(eid[fld]>0){
+             r_qM[fld] += fmn*s_q[fld][k];
+            }
           }
-                    
+        
         }
+
+        const dlong qbase = e*p_Np*p_sNfields + n;
+        #pragma unroll p_sNfields
+        for (int fld=0;fld<p_sNfields;fld++){
+          q[qbase+fld*p_Np] = eid[fld] > 0 ? r_qM[fld] : s_q[fld][n];
+        }
+                  
       }
+    }
   }
 }
 

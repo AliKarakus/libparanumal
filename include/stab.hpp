@@ -118,7 +118,7 @@ class stab_t {
   memory<dfloat> filterM; 
   deviceMemory<dfloat> o_filterM; 
 
-  kernel_t filterKernel; 
+  // kernel_t filterKernel; 
  
   /*****************************/
   /*   LIMITER STABILIZATION    */
@@ -158,98 +158,44 @@ class stab_t {
     Setup(_platform, _mesh, _settings);
   }
 
-  // mesh setup
+  // stab setup
   void Setup(platform_t& _platform, mesh_t &_mesh, stabSettings_t& _settings);
 
-  // It is safer o split solver implementations I guess
-  void DetectorSetup(){
-    switch (solverType) {
-      case Stab::HJS:
-        DetectorSetupHJS();
-        break;
-      case Stab::CNS:
-        // DetectorSetupCNS();
-         LIBP_FORCE_ABORT("STAB is not implemented for CNS yet");
-        break;
-      case Stab::INS:
-        LIBP_FORCE_ABORT("STAB is not implemented for INS yet");
-        // DetectorSetupINS();
-        break;
-    } 
-  }
-
-  void DetectorSetupHJS(){
+  void detectSetup(){
     switch (detectorType) {
       case Stab::KLOCKNER:
-         DetectorSetupHJSKlockner(); 
+         detectSetupKlockner(); 
         break;
       case Stab::PERSSON:
-         DetectorSetupHJSPersson(); 
+         detectSetupPersson(); 
         break;
     } 
   }
 
 
-  void DetectorApply(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
-    switch (solverType) {
-      case Stab::HJS:
-        DetectorApplyHJS(o_Q, o_RHS, T);
-        break;
-      case Stab::CNS:
-        // DetectorSetupCNS();
-         LIBP_FORCE_ABORT("STAB is not implemented for CNS yet");
-        break;
-      case Stab::INS:
-        LIBP_FORCE_ABORT("STAB is not implemented for INS yet");
-        // DetectorSetupINS();
-        break;
-    } 
-  }
-  
-
-  void DetectorApplyHJS(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
+  void detectApply(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
     switch (detectorType) {
       case Stab::KLOCKNER:
-         DetectorApplyHJSKlockner(o_Q, o_RHS, T); 
+         detectApplyKlockner(o_Q, o_RHS, T); 
         break;
       case Stab::PERSSON:
-         DetectorApplyHJSPersson(o_Q, o_RHS, T); 
+         detectApplyPersson(o_Q, o_RHS, T); 
         break;
     } 
   }
 
-
   // It is safer o split solver implementations I guess
-  void StabilizerSetup(){
-    switch (solverType) {
-      case Stab::HJS:
-        StabilizerSetupHJS();
-        break;
-      case Stab::CNS:
-        // StabilizerSetupCNS();
-         LIBP_FORCE_ABORT("STABILIZER is not implemented for CNS yet");
-        break;
-      case Stab::INS:
-        // StabilizerSetupINS();
-        LIBP_FORCE_ABORT("STABILIZER is not implemented for INS yet");
-        // DetectorSetupINS();
-        break;
-    } 
-  }
-
-
-  // It is safer o split solver implementations I guess
-  void StabilizerSetupHJS(){
+  void stabSetup(){
     switch (stabType) {
       case Stab::FILTER:
-        StabilizerSetupHJSFilter();
+        stabSetupFilter();
         break;
       case Stab::LIMITER:
          // StabilizerSetupHJSLimiter();
          LIBP_FORCE_ABORT("Limiter is not implemented yet");
         break;
       case Stab::ARTDIFF:
-        StabilizerSetupHJSArtdiff();
+        stabSetupArtdiff();
         break;
       case Stab::SUBCELL:
         // StabilizerSetupHJSSubcell();
@@ -259,58 +205,18 @@ class stab_t {
   }
 
 
-
-
-  // It is safer o split solver implementations I guess
-  void StabilizerApply(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
-    switch (solverType) {
-      case Stab::HJS:
-        StabilizerApplyHJS(o_Q, o_RHS, T);
-        break;
-      case Stab::CNS:
-         LIBP_FORCE_ABORT("STABILIZER is not implemented for CNS yet");
-        break;
-      case Stab::INS:
-        LIBP_FORCE_ABORT("STABILIZER is not implemented for INS yet");
-        break;
-    } 
-  }
-
-
-// It is safer o split solver implementations I guess
-  void StabilizerApplyHJS(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
-    switch (stabType) {
-      case Stab::FILTER:
-        StabilizerApplyHJSFilter(o_Q, o_RHS, T);
-        break;
-      case Stab::LIMITER:
-         LIBP_FORCE_ABORT("Limiter is not implemented yet");
-        break;
-      case Stab::ARTDIFF:
-        StabilizerApplyHJSArtdiff(o_Q, o_RHS, T);         
-        break;
-      case Stab::SUBCELL:
-        LIBP_FORCE_ABORT("FV-Subcell is not implemented yet");
-        break;
-    } 
-  }
-
-
-
-
+   //***********************GENERAL IO OPERATIONS****************************//
    void Report(dfloat time, int tstep); 
    dlong GetElementNumber(deviceMemory<dlong>& eList); 
    void PlotElements(memory<dlong> eList, const std::string fileName);
    void PlotFields(memory<dfloat> Q, const std::string fileName);
 
+   // *******************Detector Related Functions***************************//
+   void detectSetupKlockner(); 
+   void detectApplyKlockner(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
-   void DetectorSetupHJSKlockner(); 
-   void DetectorApplyHJSKlockner(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
-
-   void DetectorSetupHJSPersson(); 
-   void DetectorApplyHJSPersson(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
-
-
+   void detectSetupPersson(); 
+   void detectApplyPersson(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
    void ModeInfoKlocknerTri2D(int _N, memory<int>& _modeMap);
    void ModeInfoKlocknerQuad2D(int _N, memory<int>& _modeMap);
@@ -326,6 +232,9 @@ class stab_t {
    void BaseLineDecayKlockner(int _N, memory<dfloat>& _BLD);
 
 
+   // *********************FILTER RELATED*****************************************//
+   void stabSetupFilter(); 
+   void stabApplyFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
    void FilterMatrixTri2D (int _N, int _Nc, int _s, memory<dfloat>& _filterMatrix);
    void FilterMatrix1D(int _N, int _Nc, int _s, memory<dfloat>& _filterMatrix);
@@ -333,11 +242,10 @@ class stab_t {
 
 
 
-   void StabilizerSetupHJSFilter(); 
-   void StabilizerApplyHJSFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
-   void StabilizerSetupHJSArtdiff(); 
-   void StabilizerApplyHJSArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+   // *********************ARTIFICIAL DIFFUSION RELATED*****************************//
+   void stabSetupArtdiff(); 
+   void stabApplyArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
     
    dfloat ElementViscosityScaleTri2D(dlong e);
    dfloat ElementViscosityScaleQuad2D(dlong e);
@@ -348,7 +256,7 @@ class stab_t {
  
  private:
   /*Set the type of mesh*/
-  void SetTypes(const Stab::SolverType sType, 
+  void setTypes(const Stab::SolverType sType, 
                 const Stab::DetectorType dType, 
                 const Stab::StabType stType);
 

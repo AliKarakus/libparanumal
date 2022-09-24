@@ -28,7 +28,7 @@ SOFTWARE.
 
 namespace libp {
 
-void stab_t::SetTypes(const Stab::SolverType sType, 
+void stab_t::setTypes(const Stab::SolverType sType, 
                       const Stab::DetectorType dType, 
                       const Stab::StabType stType) {
 

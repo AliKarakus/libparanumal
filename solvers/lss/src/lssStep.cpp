@@ -43,19 +43,15 @@ void lss_t::postStep(deviceMemory<dfloat>& o_Q, const dfloat time, const dfloat 
 
 
 if(redistance){
-// if(timeStepper.outputStep==0){
+  // if(timeStepper.outputStep==0){
    historyIndex +=1; 
 
   // const dfloat dt = timeStepper->GetTimeStep(); 
   reconstructTime[shiftIndex] = time + dt; 
   o_reconstructTime.copyFrom(reconstructTime); 
 
-
   const dlong N = mesh.Nelements*mesh.Np*Nfields; 
   o_phiH.copyFrom(o_Q, N, shiftIndex*N,0); 
-
-      // std::cout<<"history index: "<<historyIndex<<" "<<time<<" "<<dt<<" "<< Nrecon<<std::endl;
-
 
    if(historyIndex==(Nrecon/2)){
     std::cout<<"history index: "<<historyIndex<<" "<<time<<" "<<dt<<" "<< Nrecon<<std::endl;
@@ -66,8 +62,6 @@ if(redistance){
                              o_phiH);
    }
 
-
-
   if(historyIndex>=(Nrecon/2))
   timeReconstructKernel(mesh.Nelements, 
                         shiftIndex, 
@@ -77,12 +71,6 @@ if(redistance){
                         o_phi);
 
   shiftIndex = (shiftIndex+Nrecon-1)%Nrecon;
-  // std::cout<<shiftIndex<<std::endl;
-
- // DetectTroubledCells(o_Q, subcell->o_ElementList); 
-
-// }
-
 
 }
 
@@ -91,7 +79,7 @@ if(redistance){
 
 void lss_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_RHS, const dfloat T){
 
- stab.StabilizerApply(o_Q, o_RHS, T);
+ // stab.stabilizerApply(o_Q, o_RHS, T);
 
   // stab.Report(0,0); 
 
@@ -215,7 +203,17 @@ compressibleSurfaceKernel(mesh.Nelements,
 
 void lss_t::Redistance(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
  
-// extract q halo on DEVICE
+ if(stab.stabType==Stab::FILTER){
+  // Detect
+  stab.detectApply(o_Q, o_RHS, T); 
+  // Filter
+  filterKernel(mesh.Nelements, 
+               stab.o_eList, 
+               stab.o_filterM, 
+               o_Q); 
+ }
+
+  // extract q halo on DEVICE
   qTraceHalo.ExchangeStart(o_Q, 1);
 
  redistanceVolumeKernel(mesh.Nelements,

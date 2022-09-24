@@ -39,20 +39,27 @@ void stab_t::Report(dfloat time, int tstep){
 
   if (settings.compareSetting("STAB OUTPUT TO FILE","TRUE")) {
     char fname[BUFSIZ];
-    sprintf(fname, "detector_%04d_%04d.vtu", mesh.rank, frame);
+    sprintf(fname, "detect_%04d_%04d.vtu", mesh.rank, frame);
 	
 	  // copy data back to host
   	o_eList.copyTo(eList);
-    if(viscRamp.length()!=0){o_viscRamp.copyTo(viscRamp);}
+    if(viscRamp.length()!=0){
+      o_viscRamp.copyTo(viscRamp);
+    }
   	PlotElements(eList, std::string(fname));
 
-    sprintf(fname, "StabField_%04d_%04d.vtu", mesh.rank, frame);
-    if(visc.length()!=0){o_visc.copyTo(visc);}    
-    if(qd.length()!=0){o_qd.copyTo(qd);}    
+    sprintf(fname, "stab_%04d_%04d.vtu", mesh.rank, frame);
+    if(visc.length()!=0){
+      o_visc.copyTo(visc);
+    }    
+    if(qd.length()!=0){
+      o_qd.copyTo(qd);
+    }    
+    
     PlotFields(qd, fname);
     frame++; 
-
   }
+  
 }
 
 
@@ -124,7 +131,7 @@ void stab_t::PlotElements(memory<dlong> ElementList, const std::string fileName)
 
 
   if(viscRamp.length()!=0){
- fprintf(fp, "        <DataArray type=\"Float32\" Name=\"artViscFunc\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+ fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Ramp\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
   for(dlong e=0;e<mesh.Nelements;++e){
       for(int n=0;n<mesh.Nverts;++n){
           fprintf(fp, "       ");
@@ -242,7 +249,7 @@ FILE *fp;
  
   if (Q.length()!=0) {
     // write out pressure
-     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"DetectedField\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"DetectField\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
     for(dlong e=0;e<mesh.Nelements;++e){
       mesh.PlotInterp(Q + 0*mesh.Np + e*mesh.Np*dNfields, Iu, scratch);
        if(dNfields>1)

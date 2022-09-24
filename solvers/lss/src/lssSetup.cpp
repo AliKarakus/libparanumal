@@ -244,6 +244,18 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     }
   }
 
+
+  if(stab.stabType==Stab::FILTER){
+    kernelInfo["defines/" "p_Nq"]= mesh.N + 1;
+    std::cout<<"I am here"<<std::endl;
+    fileName   = oklFilePrefix + "lssFilter" +  oklFileSuffix;
+    kernelName = "lssFilter" + suffix; 
+    filterKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+  }
+
+
+
+
   // kernels from initialization files
   if (mesh.dim==2) {
     fileName   = oklFilePrefix + "lssInitialCondition2D" + oklFileSuffix;
