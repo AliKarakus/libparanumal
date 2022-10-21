@@ -42,8 +42,8 @@ SOFTWARE.
                       @restrict dfloat *b){
 
   for(dlong n=0;n<N;++n;@tile(p_blockSize,@outer,@inner)){
-    const dlong id = a[n]; 
-    b[n] = dfloat(id);
+    const int id = a[n]; 
+    b[n] = id >0 ? 1.0 : 0.0;
   }
 }
 

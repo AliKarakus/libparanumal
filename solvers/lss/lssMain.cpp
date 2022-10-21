@@ -63,6 +63,7 @@ int main(int argc, char **argv){
 
   // set up level set solver
   lss_t lss(platform, mesh, stab, lssSettings);
+  
   // run
   lss.Run();
 

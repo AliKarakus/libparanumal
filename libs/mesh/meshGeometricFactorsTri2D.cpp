@@ -44,7 +44,7 @@ void mesh_t::GeometricFactorsTri2D(){
   props["defines/" "p_SXID"]= SXID;
   props["defines/" "p_RYID"]= RYID;
   props["defines/" "p_SYID"]= SYID;
-  props["defines/" "p_JID"]= JID;
+  props["defines/" "p_JID"] = JID;
 
   /* unified storage array for geometric factors */
   vgeo.malloc((Nelements+totalHaloPairs)*Nvgeo);

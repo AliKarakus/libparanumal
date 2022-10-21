@@ -46,6 +46,54 @@ void cns_t::Report(dfloat time, int tstep){
 
     // copy data back to host
     o_q.copyTo(q);
+
+    
+    {
+    char fname[BUFSIZ];
+    sprintf(fname, "pressure_%d.dat", frame);
+    std::string filename = std::string(fname); 
+    FILE *fp = fopen(filename.c_str(), "w");
+
+     for(int e=0; e< mesh.Nelements; e++){
+      for(int f = 0; f< mesh.Nfaces; f++){
+
+        int bc = mesh.EToB[e*mesh.Nfaces + f]; 
+
+        if(bc == 1){
+        for(int n=0; n<mesh.Nfp; n++){
+
+          const dlong id = e*mesh.Nfaces*mesh.Nfp + f*mesh.Nfp + n; 
+          const dlong vid = mesh.vmapM[id]; 
+
+          // load traces
+          const dlong eM = e;
+          const int vidM = vid%mesh.Np;
+          const dlong qbase = eM*mesh.Np*Nfields + vidM;
+
+
+          const dfloat r  = q[qbase+0*mesh.Np];
+          const dfloat ru = q[qbase+1*mesh.Np];
+          const dfloat rv = q[qbase+2*mesh.Np];
+          const dfloat E  = q[qbase+3*mesh.Np];
+
+          // primitive variables
+          const dfloat u = ru/r, v = rv/r;
+          const dfloat pn = (gamma-1)*(E-0.5*r*(u*u+v*v));
+          const dfloat xn = mesh.x[eM*mesh.Np + vidM]; 
+          const dfloat yn = mesh.y[eM*mesh.Np + vidM]; 
+          fprintf(fp, "%.8e %.8e %.8e\n", xn, yn, pn);
+
+        }
+        }
+      }
+     }
+       fclose(fp);
+   }
+
+
+
+
+
     o_Vort.copyTo(Vort);
 
     // output field files

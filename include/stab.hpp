@@ -76,6 +76,11 @@ class stab_t {
 
   int dNfields, sNfields; // # of detector and stabiization fields; 
 
+  /***************************/
+  int CXID, CYID, CZID, IVID; 
+  int FXID, FYID, FZID, SAID; 
+  int NXID, NYID, NZID, BCID; 
+
   /*************************/
   /* Solver Data           */
   /*************************/
@@ -141,11 +146,48 @@ class stab_t {
 
   kernel_t computeViscosityKernel; 
 
+  /*******************************************/
+  /*         SUBCELL STABILIZATION           */
+  /*******************************************/
+  int N, Nsubcells, Nint, Next, Nfields; 
+  int Nverts, Nfaces, NfaceVertices, Np; 
+  int Nvgeo, Nsgeo; 
+
+  // minor girid connectivity
+  memory<int> mEToV, mEToE, mEToF; 
+  memory<int> faceVertices; 
+  memory<dfloat> vr, vs, vt; // local vertex coordinates @ reference element
+  memory<dfloat> cr, cs, ct; // center points of subcells @ reference element 
+  memory<dfloat> fr, fs, ft; // center points of subcells @ reference element 
+  memory<dfloat> mJ; // Jacobian of minor grid
 
 
 
+  memory<int> mFToE, mFToF, mDGID; 
+  deviceMemory<int> o_mFToE, o_mFToF, o_mDGID, o_mEToV;   
 
+  // local projection 
+  memory<dfloat> PM,  RM, PVM; // volume reconstuction, projection,  vertex  projection
+  deviceMemory<dfloat> o_PM, o_RM, o_PVM;  
 
+  memory<dfloat> PFM, RFM, SLIFT; // face projection and reconstruction 
+  deviceMemory<dfloat> o_PFM, o_RFM, o_SLIFT; 
+
+  // Connectivity
+  memory<int> ielist, eelist; // local connectivity 
+  deviceMemory<int> o_ielist, o_eelist; 
+
+  // Glocal Connectivity
+  memory<dlong> emapP, fmapP; // global connectivity
+  deviceMemory<dlong> o_emapP, o_fmapP; // global connectivity
+
+  // geometric info
+  memory<dfloat> vgeo, sgeo; 
+  deviceMemory<dfloat> o_vgeo, o_sgeo; 
+
+  deviceMemory<dlong> o_EToE; 
+
+  kernel_t findNeighKernel; 
 
 
   // kernel_t primitiveToConservativeKernel;
@@ -198,8 +240,8 @@ class stab_t {
         stabSetupArtdiff();
         break;
       case Stab::SUBCELL:
-        // StabilizerSetupHJSSubcell();
-        LIBP_FORCE_ABORT("FV-Subcell is not implemented yet");
+        stabSetupSubcell();
+        // LIBP_FORCE_ABORT("FV-Subcell is not implemented yet");
         break;
     } 
   }
@@ -251,6 +293,40 @@ class stab_t {
    dfloat ElementViscosityScaleQuad2D(dlong e);
    dfloat ElementViscosityScaleTet3D(dlong e);
    dfloat ElementViscosityScaleHex3D(dlong e);
+
+
+   // *********************ARTIFICIAL DIFFUSION RELATED*****************************//
+   void stabSetupSubcell(); 
+   void stabSetupSubcellTri2D(); 
+
+
+   void CellLocalConnectTri2D(); 
+   void CellGlobalConnectTri2D(); 
+   void CellCreateMinorGridTri2D();
+   void CellGeometricFactorsTri2D(); 
+   void CellSetupOperatorsTri2D(); 
+   void CellFindBestMatchTri2D(dfloat x1, dfloat y1, dlong eP, int fP, 
+                               memory<int> &elist, memory<dfloat> &x2,  memory<dfloat> &y2, 
+                               int &nE, int &nF);
+
+
+   void CellEquispacedEToVTri2D(const int _N, memory<int>& mEToV);
+   void CellWarpBlendEToVTri2D(const int _N, memory<int>& mEToV);
+
+   // void GeometricFactorsQuad2D(); 
+   // void GeometricFactorsHex3D(); 
+   // void GeometricFactorsTet3D(); 
+
+
+
+
+
+   // void stabSetupSubcellQuad2D(); 
+   // void stabSetupSubcellTet3D(); 
+   // void stabSetupSubcellHex3D(); 
+   // void stabApplyArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+
+
 
 
  

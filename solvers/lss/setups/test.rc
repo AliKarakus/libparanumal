@@ -2,16 +2,19 @@
 2.0
 
 [DATA FILE]
-data/test2D.h
+#data/test2D.h
 #data/test3D.h
 #data/lssVortex2D.h
 #data/lssCircle2D.h
+data/lssSquare2D.h
+#data/lssMultipleInterfaces2D.h
 #data/lssCircle3D.h
 #data/lssSBRotation.h
 
 [MESH FILE]
+../../meshes/lssTest3Tri2D.msh
 #../../meshes/lssTri.msh
-../../meshes/lssQuad.msh
+#../../meshes/lssQuad.msh
 #../../meshes/lssTet.msh
 #../../meshes/lssHex.msh
 #BOX
@@ -21,16 +24,16 @@ data/test2D.h
 #3
 
 [ELEMENT TYPE] # number of edges
-#3
-4
+3
+#4
 #6
 #12
 
 [BOX NX]
-11
+21
 
 [BOX NY]
-11
+21
 
 [BOX NZ]
 11
@@ -50,7 +53,7 @@ data/test2D.h
 1
 
 [POLYNOMIAL DEGREE]
-5
+3
 
 [THREAD MODEL]
 CUDA
@@ -84,33 +87,40 @@ ENO2
 1
 
 # Klockner: 1 Persson: 2
-#Klockner is broken, why!!!!!!
 [DETECTOR TYPE]
-1
+2
 
 # Filter: 1, Limiter: 2, Artdiff: 3, Subcell: 4
 [STAB TYPE]
-1
+4
 
-[FILTER CUTOFF]
-0
+#{0,1,....,N-1}
+#[FILTER CUTOFF]
+#0
 
-# Even Number i.e. 2, 4, 8,...
-[FILTER ORDER]
-2
+# Even Number {2, 4, 8,...}
+#[FILTER ORDER]
+#2
+
+[SUBCELL NUMBER]
+5
+
+[SUBCELL MINOR GRID]
+#EQUISPACED
+WARPBLEND
 
 [TIME INTEGRATOR]
 #DOPRI5
 LSERK4
 
 [CFL NUMBER]
-0.1
+0.01
 
 [START TIME]
 0
 
 [FINAL TIME]
-1
+1.5
 
 [OUTPUT INTERVAL]
 0.1

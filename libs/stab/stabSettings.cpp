@@ -56,6 +56,14 @@ stabSettings_t::stabSettings_t(comm_t _comm):
              "Exponential Filter Order (must be even)");
 
 
+  newSetting("SUBCELL NUMBER",
+             "0",
+             "Subcell number per edge (>=N)");
+
+  newSetting("SUBCELL MINOR GRID",
+             "WARPBLEND",
+             "Subcell minor grid");
+
   newSetting("STAB OUTPUT TO FILE",
              "TRUE",
              "Detector Output to File ",

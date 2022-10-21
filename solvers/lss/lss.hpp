@@ -69,6 +69,7 @@ public:
 
   ogs::halo_t qTraceHalo;
   ogs::halo_t vTraceHalo;
+  ogs::halo_t gTraceHalo;
 
   memory<dfloat> q;
   memory<dfloat> U; 
@@ -109,16 +110,39 @@ public:
   kernel_t timeInitialHistoryKernel;
   kernel_t redistanceSetFieldsKernel; 
 
-
   kernel_t MassMatrixKernel;
 
   kernel_t initialConditionKernel;
   kernel_t setFlowFieldKernel;
 
   // Stabilization Related
-
   kernel_t filterKernel; 
-  
+
+  // ***************************ARTDIFF*********************//
+  dfloat qTau; // Stabilization Parameter
+  kernel_t gradientVolumeKernel;
+  kernel_t gradientSurfaceKernel;
+  kernel_t divergenceVolumeKernel; 
+  kernel_t divergenceSurfaceKernel; 
+  // ***************************SUBCELL*********************//
+  ogs::ogs_t lssogs;
+  deviceMemory<dfloat> o_gsphi; 
+
+
+  memory<dfloat> sface; 
+  deviceMemory<dfloat> o_sface;
+
+  memory<dfloat> weight; 
+  deviceMemory<dfloat> o_weight; 
+
+  // memory<dfloat> sq; 
+  // deviceMemory<dfloat> o_sq;
+
+  kernel_t projectFVKernel; // project DG -> Cell Centers
+  kernel_t projectDGKernel; // project DG -> Cell Faces at DG-FV Interface
+  kernel_t reconstructFaceKernel; // compute face values
+  kernel_t subcellComputeKernel; // FV Update values
+  kernel_t reconstructDGKernel; // recontruct DG solution from cell averages values
 
  
 
@@ -137,16 +161,20 @@ public:
   void Advection(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
 
   void Redistance(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+  void RedistanceFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+  void RedistanceArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+  void RedistanceSubcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
  
   void Report(dfloat time, int tstep);
 
   void PlotFields(memory<dfloat> Q, const std::string fileName);
 
   void rhsf(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
+  void rhsf_subcell(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_sq, 
+                    deviceMemory<dfloat>& o_rhs, deviceMemory<dfloat>& o_rhss, const dfloat time);
   
   void postStep(deviceMemory<dfloat>& o_q,  const dfloat time, const dfloat dt);
-
-  void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
+  void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time, const dfloat dt);
 
 
 };

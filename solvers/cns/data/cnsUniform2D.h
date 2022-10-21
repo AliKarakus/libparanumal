@@ -28,15 +28,15 @@ SOFTWARE.
 #define p_RBAR 1.0
 #define p_UBAR 1.0
 #define p_VBAR 0.0
-#define p_PBAR 1.0
+#define p_PBAR 71.4286
 
 // Initial conditions (p is ignored for isothermal)
 #define cnsInitialConditions2D(gamma, mu, t, x, y, r, u, v, p) \
 {                                         \
-  *(r) = p_RBAR           \
-  *(u) = p_UBAR           \
-  *(v) = p_VBAR           \
-  *(p) = p_PBAR           \
+  *(r) = p_RBAR;           \
+  *(u) = p_UBAR;           \
+  *(v) = p_VBAR;           \
+  *(p) = p_PBAR;           \
 }
 
 // Body force
@@ -75,7 +75,7 @@ SOFTWARE.
     *(rB) = rM;                        \
     *(uB) = uM;                        \
     *(vB) = vM;                        \
-    *(pB) = pM;                        \
+    *(pB) = p_PBAR;                    \
     *(uxB) = 0.0;                      \
     *(uyB) = 0.0;                      \
     *(vxB) = 0.0;                      \

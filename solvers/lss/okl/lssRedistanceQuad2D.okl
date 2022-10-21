@@ -26,12 +26,12 @@ SOFTWARE.
 
 
 // in collocation way (weak form)
-@kernel void lssRedistanceVolumeQuad2D(const dlong Nelements,
-                                  const  dfloat    t,
-                                  @restrict const  dfloat *  vgeo,
-                                  @restrict const  dfloat *  DT,
-                                  @restrict const  dfloat *  q,
-                                  @restrict        dfloat *  gradq){
+@kernel void lssRedistanceVolumeWeakQuad2D(const dlong Nelements,
+                                            const  dfloat    t,
+                                            @restrict const  dfloat *  vgeo,
+                                            @restrict const  dfloat *  DT,
+                                            @restrict const  dfloat *  q,
+                                            @restrict        dfloat *  gradq){
 
   for(dlong eo=0;eo<Nelements;eo+=p_NblockV;@outer(0)){  // for all elements
 
@@ -124,7 +124,88 @@ SOFTWARE.
   }
 }
 
-void surfaceTerms(dlong e, int es,
+
+
+// in collocation way (strong form)
+@kernel void lssRedistanceVolumeStrongQuad2D(const dlong Nelements,
+                                  const  dfloat    t,
+                                  @restrict const  dfloat *  vgeo,
+                                  @restrict const  dfloat *  DT,
+                                  @restrict const  dfloat *  q,
+                                  @restrict        dfloat *  gradq){
+
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockV;@outer(0)){  // for all elements
+
+    @shared dfloat s_qp[p_NblockV][p_Nq][p_Nq];
+    @shared dfloat s_qm[p_NblockV][p_Nq][p_Nq];
+
+    @shared dfloat s_DT[p_Nq][p_Nq];
+
+    for(int es=0;es<p_NblockV;++es;@inner(2)){
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+        for(int i=0;i<p_Nq;++i;@inner(0)){
+          const dlong e = eo+es; // element in block
+          if(e<Nelements){
+
+            const dlong id = e*p_Np*p_Nfields + j*p_Nq + i;
+            s_qp[es][j][i] = q[id+0*p_Np];
+            s_qm[es][j][i] = q[id+1*p_Np];
+
+            if (es==0)
+              s_DT[j][i] = DT[j*p_Nq+i];
+          }
+        }
+      }
+    }
+
+    // Make sure all node data is loaded into @shared
+
+    for(int es=0;es<p_NblockV;++es;@inner(2)){
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+        for(int i=0;i<p_Nq;++i;@inner(0)){
+          const dlong e = eo+es;
+          if(e<Nelements){
+            const dlong gid = e*p_Np*p_Nvgeo+ j*p_Nq +i;
+
+            const dfloat drdx = vgeo[gid + p_RXID*p_Np];
+            const dfloat drdy = vgeo[gid + p_RYID*p_Np];
+            const dfloat dsdx = vgeo[gid + p_SXID*p_Np];
+            const dfloat dsdy = vgeo[gid + p_SYID*p_Np];
+
+            // compute 'r' and 's' derivatives of (q_m) at node n
+            dfloat dqpdr  = 0.f, dqpds  = 0.f;
+            dfloat dqmdr  = 0.f, dqmds  = 0.f;
+
+            #pragma unroll p_Nq
+            for(int n=0;n<p_Nq;++n){
+              const dfloat Dr = s_DT[i][n];
+              const dfloat Ds = s_DT[j][n];
+
+              dqpdr += Dr*s_qp[es][j][n];
+              dqpds += Ds*s_qp[es][n][i];
+
+              dqmdr += Dr*s_qm[es][j][n];
+              dqmds += Ds*s_qm[es][n][i];
+            }
+
+
+            const dlong id = e*p_Np*p_Nfields*p_dim + j*p_Nq + i;
+              gradq[id+0*p_Np] = (drdx*dqpdr + dsdx*dqpds);
+              gradq[id+1*p_Np] = (drdy*dqpdr + dsdy*dqpds);
+              gradq[id+2*p_Np] = (drdx*dqmdr + dsdx*dqmds);
+              gradq[id+3*p_Np] = (drdy*dqmdr + dsdy*dqmds);
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+void surfaceTermsWeak(dlong e, int es,
                   int sk, int face,
                   int i, int j,
                   dfloat time,
@@ -188,7 +269,7 @@ void surfaceTerms(dlong e, int es,
 
 }
 
-@kernel void lssRedistanceSurfaceQuad2D(const dlong Nelements,
+@kernel void lssRedistanceSurfaceWeakQuad2D(const dlong Nelements,
                                       @restrict const  dfloat *  sgeo,
                                       @restrict const  dfloat *  LIFT,
                                       @restrict const  dlong  *  vmapM,
@@ -242,13 +323,13 @@ void surfaceTerms(dlong e, int es,
           const dlong sk2 = e*p_Nfp*p_Nfaces + 2*p_Nfp + i;
 
           // surfaceTerms(sk0,0,i,0     );
-          surfaceTerms(e, es, sk0, 0, i, 0, time, x, y, 
+          surfaceTermsWeak(e, es, sk0, 0, i, 0, time, x, y, 
                       sgeo, vmapM, vmapP, EToB, q,
                        s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
                        s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
 
           // surfaceTerms(sk2,2,i,p_Nq-1);
-          surfaceTerms(e, es, sk2, 2, i, p_Nq-1, time, x, y, 
+          surfaceTermsWeak(e, es, sk2, 2, i, p_Nq-1, time, x, y, 
                       sgeo, vmapM, vmapP, EToB, q,
                        s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
                        s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
@@ -266,13 +347,13 @@ void surfaceTerms(dlong e, int es,
           const dlong sk3 = e*p_Nfp*p_Nfaces + 3*p_Nfp + j;
 
           // surfaceTerms(sk1,1,p_Nq-1,j);
-           surfaceTerms(e, es, sk1, 1, p_Nq-1, j, time, x, y, 
+           surfaceTermsWeak(e, es, sk1, 1, p_Nq-1, j, time, x, y, 
                       sgeo, vmapM, vmapP, EToB, q,
                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
 
           // surfaceTerms(sk3,3,0     ,j);
-          surfaceTerms(e, es, sk3, 3, 0, j, time, x, y, 
+          surfaceTermsWeak(e, es, sk3, 3, 0, j, time, x, y, 
                       sgeo, vmapM, vmapP, EToB, q,
                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
@@ -322,3 +403,207 @@ void surfaceTerms(dlong e, int es,
     }
   }
 }
+
+
+
+void surfaceTermsStrong(dlong e, int es,
+                  int sk, int face,
+                  int i, int j,
+                  dfloat time,
+                  const dfloat *x,
+                  const dfloat *y,
+                  const dfloat *sgeo,
+                  const dlong *vmapM,
+                  const dlong *vmapP,
+                  const dlong *EToB,
+                  const dfloat *q,
+                  @shared dfloat s_qpxf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpxf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpyf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qpyf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmxf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmxf2[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmyf1[p_NblockS][p_Nq][p_Nq],
+                  @shared dfloat s_qmyf2[p_NblockS][p_Nq][p_Nq]){
+
+  const dlong  idM = vmapM[sk];
+  const dlong  idP = vmapP[sk];
+
+  const dfloat nx = sgeo[sk*p_Nsgeo+p_NXID];
+  const dfloat ny = sgeo[sk*p_Nsgeo+p_NYID];
+  const dfloat sJ = sgeo[sk*p_Nsgeo+p_SJID];
+  const dfloat invWJ = sgeo[sk*p_Nsgeo+p_WIJID];
+
+  const dlong eM = e;
+  const dlong eP = idP/p_Np;
+  const int vidM = idM%p_Np;
+  const int vidP = idP%p_Np;
+
+  const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+  const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+  const dfloat qpM = q[qbaseM+0*p_Np], qmM = q[qbaseM+1*p_Np];
+        dfloat qpP = q[qbaseP+0*p_Np], qmP = q[qbaseP+1*p_Np];
+
+  const int bc = EToB[face+p_Nfaces*e];
+  // if(bc>0) {
+  //   lssDirichletConditions2D(bc, time, x[idM], y[idM], nx, ny, qM, &qP);
+  // }
+
+  const dfloat sc = invWJ * sJ;
+  
+  // simple upwind
+  dfloat unx = 0.0, dnx = 1.0; 
+  dfloat uny = 0.0, dny = 1.0; 
+  if(nx>= 0){unx = 1.0, dnx = 0.0;}
+  if(ny>= 0){uny = 1.0, dny = 0.0;}
+
+  s_qpxf1[es][j][i] += sc*nx*( (dnx*qpM  + unx*qpP) - qpM);
+  s_qpxf2[es][j][i] += sc*nx*( (unx*qpM  + dnx*qpP) - qpM);   
+  s_qpyf1[es][j][i] += sc*ny*( (dny*qpM  + uny*qpP) - qpM);
+  s_qpyf2[es][j][i] += sc*ny*( (uny*qpM  + dny*qpP) - qpM);
+
+  s_qmxf1[es][j][i] += sc*nx*( (dnx*qmM  + unx*qmP) - qmM);
+  s_qmxf2[es][j][i] += sc*nx*( (unx*qmM  + dnx*qmP) - qmM);  
+  s_qmyf1[es][j][i] += sc*ny*( (dny*qmM  + uny*qmP) - qmM);
+  s_qmyf2[es][j][i] += sc*ny*( (uny*qmM  + dny*qmP) - qmM);
+}
+
+@kernel void lssRedistanceSurfaceStrongQuad2D(const dlong Nelements,
+                                      @restrict const  dfloat *  sgeo,
+                                      @restrict const  dfloat *  LIFT,
+                                      @restrict const  dlong  *  vmapM,
+                                      @restrict const  dlong  *  vmapP,
+                                      @restrict const  int    *  EToB,
+                                                const  dfloat time,
+                                      @restrict const  dfloat *  x,
+                                      @restrict const  dfloat *  y,
+                                      @restrict const  dfloat *  z,
+                                      @restrict const  dfloat *  q,
+                                      @restrict const  dfloat *  gradq,
+                                      @restrict dfloat *  rhsq){
+
+  // for all elements
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockS;@outer(0)){
+    // @shared storage for flux terms
+    @shared dfloat s_qpxf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpxf2[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpyf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qpyf2[p_NblockS][p_Nq][p_Nq];
+
+    @shared dfloat s_qmxf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmxf2[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmyf1[p_NblockS][p_Nq][p_Nq];
+    @shared dfloat s_qmyf2[p_NblockS][p_Nq][p_Nq];
+
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        #pragma unroll p_Nq
+        for(int j=0;j<p_Nq;++j){
+        s_qpxf1[es][j][i] = 0.; 
+        s_qpxf2[es][j][i] = 0.; 
+        s_qpyf1[es][j][i] = 0.; 
+        s_qpyf2[es][j][i] = 0.; 
+
+        s_qmxf1[es][j][i] = 0.; 
+        s_qmxf2[es][j][i] = 0.; 
+        s_qmyf1[es][j][i] = 0.; 
+        s_qmyf2[es][j][i] = 0.; 
+        }
+      }
+    }
+
+    // for all face nodes of all elements
+    // face 0 & 2
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          const dlong sk0 = e*p_Nfp*p_Nfaces + 0*p_Nfp + i;
+          const dlong sk2 = e*p_Nfp*p_Nfaces + 2*p_Nfp + i;
+
+          // surfaceTerms(sk0,0,i,0     );
+          surfaceTermsStrong(e, es, sk0, 0, i, 0, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+
+          // surfaceTerms(sk2,2,i,p_Nq-1);
+          surfaceTermsStrong(e, es, sk2, 2, i, p_Nq-1, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                       s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                       s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+        }
+      }
+    }
+
+
+    // face 1 & 3
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int j=0;j<p_Nq;++j;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          const dlong sk1 = e*p_Nfp*p_Nfaces + 1*p_Nfp + j;
+          const dlong sk3 = e*p_Nfp*p_Nfaces + 3*p_Nfp + j;
+
+          // surfaceTerms(sk1,1,p_Nq-1,j);
+           surfaceTermsStrong(e, es, sk1, 1, p_Nq-1, j, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                      s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                      s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+
+          // surfaceTerms(sk3,3,0     ,j);
+          surfaceTermsStrong(e, es, sk3, 3, 0, j, time, x, y, 
+                      sgeo, vmapM, vmapP, EToB, q,
+                      s_qpxf1, s_qpxf2,s_qpyf1, s_qpyf2,
+                      s_qmxf1, s_qmxf2,s_qmyf1, s_qmyf2);
+        }
+      }
+    }
+
+
+    // for each node in the element
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int i=0;i<p_Nq;++i;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          #pragma unroll p_Nq
+          for(int j=0;j<p_Nq;++j){
+            const dlong idg = e*p_Np*p_Nfields*p_dim + j*p_Nq + i;
+
+            const dfloat dqpdx = gradq[idg + 0*p_Np];
+            const dfloat dqpdy = gradq[idg + 1*p_Np];            
+            const dfloat dqmdx = gradq[idg + 2*p_Np];
+            const dfloat dqmdy = gradq[idg + 3*p_Np];
+
+            const dfloat qpx1 =  dqpdx + s_qpxf1[es][j][i]; 
+            const dfloat qpx2 =  dqpdx + s_qpxf2[es][j][i]; 
+            const dfloat qpy1 =  dqpdy + s_qpyf1[es][j][i]; 
+            const dfloat qpy2 =  dqpdy + s_qpyf2[es][j][i]; 
+
+            const dfloat qmx1 =  dqmdx + s_qmxf1[es][j][i]; 
+            const dfloat qmx2 =  dqmdx + s_qmxf2[es][j][i]; 
+            const dfloat qmy1 =  dqmdy + s_qmyf1[es][j][i]; 
+            const dfloat qmy2 =  dqmdy + s_qmyf2[es][j][i]; 
+
+            const dfloat qpx = 0.5f*(qpx1 + qpx2); 
+            const dfloat qpy = 0.5f*(qpy1 + qpy2); 
+
+            const dfloat qmx = 0.5f*(qmx1 + qmx2); 
+            const dfloat qmy = 0.5f*(qmy1 + qmy2); 
+
+            // const dfloat diff_p = rhsq[e*p_Np*p_Nfields + j*p_Nq + i + 0*p_Np];
+            // const dfloat diff_m = rhsq[e*p_Np*p_Nfields + j*p_Nq + i + 1*p_Np];
+
+             // back to original id 
+            const dlong id = e*p_Np*p_Nfields + j*p_Nq + i;
+            // LLF Numerical Hamiltonian
+            rhsq[id + 0*p_Np] = -(( sqrt( qpx*qpx + qpy*qpy ))-0.5f*(qpx1-qpx2)-0.5*(qpy1-qpy2));
+            rhsq[id + 1*p_Np] = -(( sqrt( qmx*qmx + qmy*qmy ))-0.5f*(qmx1-qmx2)-0.5*(qmy1-qmy2));
+          }
+        }
+      }
+    }
+  }
+}
+

@@ -23,7 +23,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-@kernel void lssRedistanceVolumeTri2D(const dlong Nelements,
+// in collocation way (weak form)
+@kernel void lssRedistanceVolumeWeakTri2D(const dlong Nelements,
                                   const  dfloat    t,
                                   @restrict const  dfloat *  vgeo,
                                   @restrict const  dfloat *  DT,
@@ -78,8 +79,121 @@ SOFTWARE.
 }
 
 
-// batch process elements
-@kernel void lssRedistanceSurfaceTri2D(const dlong Nelements,
+// in collocation way (weak form)
+@kernel void lssRedistancePartialVolumeWeakTri2D(const dlong Nelements,
+                                  const  dfloat    t,
+                                  @restrict const  dlong *  eList,
+                                  @restrict const  dfloat *  vgeo,
+                                  @restrict const  dfloat *  DT,
+                                  @restrict const  dfloat *  q,
+                                  @restrict        dfloat *  gradq){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    @shared dfloat s_q[p_Np];
+    @exclusive int etype; 
+
+for(int fld=0; fld<p_Nfields; fld++){
+
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      etype = eList[e*p_dNfields + fld];     
+      if(etype !=s_FVFV_TYPE){
+       const dlong id = e*p_Np*p_Nfields + n;
+       s_q[n]          = q[id + fld*p_Np];
+      }
+
+    }
+
+
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      if(etype !=s_FVFV_TYPE){
+        // prefetch geometric factors (constant on triangle)
+        const dfloat drdx = vgeo[e*p_Nvgeo + p_RXID];
+        const dfloat drdy = vgeo[e*p_Nvgeo + p_RYID];
+        const dfloat dsdx = vgeo[e*p_Nvgeo + p_SXID];
+        const dfloat dsdy = vgeo[e*p_Nvgeo + p_SYID];
+
+        dfloat dqdr = 0, dqds = 0; 
+
+        for(int i=0;i<p_Np;++i){
+          const dfloat qn = s_q[i];
+          const dfloat dr  = DT[n+i*p_Np+0*p_Np*p_Np];
+          const dfloat ds  = DT[n+i*p_Np+1*p_Np*p_Np];
+          dqdr += dr*qn;
+          dqds += ds*qn;
+        }
+
+        const dfloat dqdx = drdx*dqdr + dsdx*dqds;
+        const dfloat dqdy = drdy*dqdr + dsdy*dqds;
+
+        const dlong id = e*p_Np*p_Nfields*p_dim + fld*p_Np*p_dim + n;
+        gradq[id + 0*p_Np] = -dqdx;
+        gradq[id + 1*p_Np] = -dqdy;
+      }
+    }
+  }
+
+  }
+}
+
+
+// in collocation way (strong form)
+@kernel void lssRedistanceVolumeStrongTri2D(const dlong Nelements,
+                                  const  dfloat    t,
+                                  @restrict const  dfloat *  vgeo,
+                                  @restrict const  dfloat *  DT,
+                                  @restrict const  dfloat *  q,
+                                  @restrict        dfloat *  gradq){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+    @shared dfloat s_qp[p_Np];
+    @shared dfloat s_qm[p_Np];
+
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      const dlong id = e*p_Np*p_Nfields + n;
+      s_qp[n]          = q[id + 0*p_Np];
+      s_qm[n]          = q[id + 1*p_Np];
+    }
+
+    for(int n=0;n<p_Np;++n;@inner(0)){
+      // prefetch geometric factors (constant on triangle)
+      const dfloat drdx = vgeo[e*p_Nvgeo + p_RXID];
+      const dfloat drdy = vgeo[e*p_Nvgeo + p_RYID];
+      const dfloat dsdx = vgeo[e*p_Nvgeo + p_SXID];
+      const dfloat dsdy = vgeo[e*p_Nvgeo + p_SYID];
+
+      dfloat dqpdr = 0, dqpds = 0; 
+      dfloat dqmdr = 0, dqmds = 0; 
+
+      for(int i=0;i<p_Np;++i){
+        const dfloat qpn = s_qp[i];
+        const dfloat qmn = s_qm[i];
+        const dfloat dr  = DT[n+i*p_Np+0*p_Np*p_Np];
+        const dfloat ds  = DT[n+i*p_Np+1*p_Np*p_Np];
+
+        dqpdr += dr*qpn;
+        dqpds += ds*qpn;
+ 
+        dqmdr += dr*qmn;
+        dqmds += ds*qmn;
+      }
+
+      const dfloat dqpdx = drdx*dqpdr + dsdx*dqpds;
+      const dfloat dqpdy = drdy*dqpdr + dsdy*dqpds;
+      const dfloat dqmdx = drdx*dqmdr + dsdx*dqmds;
+      const dfloat dqmdy = drdy*dqmdr + dsdy*dqmds;
+
+      const dlong id = e*p_Np*p_Nfields*p_dim + n;
+      gradq[id + 0*p_Np] = dqpdx;
+      gradq[id + 1*p_Np] = dqpdy;
+      gradq[id + 2*p_Np] = dqmdx;
+      gradq[id + 3*p_Np] = dqmdy;
+    }
+  }
+}
+
+
+// in collocation way (weak form)
+@kernel void lssRedistanceSurfaceWeakTri2D(const dlong Nelements,
                                   @restrict const  dfloat *  sgeo,
                                   @restrict const  dfloat *  LIFT,
                                   @restrict const  dlong  *  vmapM,
@@ -219,6 +333,296 @@ SOFTWARE.
             // back to original id 
             const dlong id = e*p_Np*p_Nfields + n;
             // LLF Numerical Hamiltonian
+            rhsq[id + 0*p_Np] =  -(( sqrt( pP*pP+pQ*pQ ))-0.5f*(pp1-pp2)-0.5*(qp1-qp2));
+            rhsq[id + 1*p_Np] =  -(( sqrt( mP*mP+mQ*mQ ))-0.5f*(pm1-pm2)-0.5*(qm1-qm2));
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+// in collocation way (weak form)
+@kernel void lssRedistancePartialSurfaceWeakTri2D(const dlong Nelements,
+                                                  @restrict const  dlong *  eList,
+                                                  @restrict const  dfloat *  sgeo,
+                                                  @restrict const  dfloat *  LIFT,
+                                                  @restrict const  dlong  *  vmapM,
+                                                  @restrict const  dlong  *  vmapP,
+                                                  @restrict const  int    *  EToB,
+                                                            const  dfloat time,
+                                                  @restrict const  dfloat *  x,
+                                                  @restrict const  dfloat *  y,
+                                                  @restrict const  dfloat *  z,
+                                                  @restrict const  dfloat *  q,
+                                                  @restrict const  dfloat *  gradq,
+                                                  @restrict dfloat *  rhsq){
+
+  // for all elements
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockS;@outer(0)){
+
+    // @shared storage for flux terms
+    @shared dfloat s_p1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_p2[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_q1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_q2[p_NblockS][p_NfacesNfp];
+
+    @exclusive int etype; 
+
+for(int fld=0; fld<p_Nfields; fld++){
+   
+    // for all face nodes of all elements
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int n=0;n<p_maxNodes;++n;@inner(0)){ // maxNodes = max(Nfp*Nfaces,Np)
+        const dlong e = eo + es;
+        etype = eList[e*p_dNfields + fld]; 
+        if(e<Nelements && etype != s_FVFV_TYPE){
+          if(n<p_NfacesNfp){
+            // find face that owns this node
+            const int face = n/p_Nfp;
+
+            // load surface geofactors for this face
+            const dlong sid   = p_Nsgeo*(e*p_Nfaces+face);
+            const dfloat nx   = sgeo[sid+p_NXID];
+            const dfloat ny   = sgeo[sid+p_NYID];
+            const dfloat sJ   = sgeo[sid+p_SJID];
+            const dfloat invJ = sgeo[sid+p_IJID];
+
+            // indices of negative and positive traces of face node
+            const dlong id  = e*p_Nfp*p_Nfaces + n;
+            const dlong idM = vmapM[id];
+            const dlong idP = vmapP[id];
+            // load traces
+            const dlong eM = e;
+            const dlong eP = idP/p_Np;
+            const int vidM = idM%p_Np;
+            const int vidP = idP%p_Np;
+
+            const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+            const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+            // load traces
+            const dfloat qM = q[qbaseM + fld*p_Np];  dfloat qP = q[qbaseP + fld*p_Np];
+
+            // apply boundary condition
+            const int bc = EToB[face+p_Nfaces*e];
+            // if(bc>0){
+            //   lssDirichletConditions2D(bc, time, x[idM], y[idM], nx, ny, qM, &qP);
+            // }
+
+            const dfloat sc = invJ*sJ; 
+            // simple upwind
+            dfloat unx = 0.0, dnx = 1.0; 
+            dfloat uny = 0.0, dny = 1.0; 
+            if(nx>= 0){unx = 1.0, dnx = 0.0;}
+            if(ny>= 0){uny = 1.0, dny = 0.0;}
+
+            s_p1[es][n]= sc*nx*( (dnx*qM  + unx*qP));
+            s_p2[es][n]= sc*nx*( (unx*qM  + dnx*qP));
+            s_q1[es][n]= sc*ny*( (dny*qM  + uny*qP));
+            s_q2[es][n]= sc*ny*( (uny*qM  + dny*qP));
+          }
+        }
+      }
+    }
+
+    // wait for all @shared memory writes of the previous inner loop to complete
+
+
+    // for each node in the element
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int n=0;n<p_maxNodes;++n;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements && etype !=s_FVFV_TYPE){
+          if(n<p_Np){
+            dfloat p1 = 0.f, p2 = 0.f; 
+            dfloat q1 = 0.f, q2 = 0.f;   
+            // 
+            #pragma unroll p_NfacesNfp
+              for(int m=0;m<p_NfacesNfp;++m){
+                const dfloat L = LIFT[n+m*p_Np];
+                p1 += L*s_p1[es][m];
+                p2 += L*s_p2[es][m];
+                q1 += L*s_q1[es][m];
+                q2 += L*s_q2[es][m];
+              }
+
+            // ids on gradient
+            const dlong idg = e*p_Np*p_Nfields*p_dim + fld*p_Np*p_dim + n;
+            const dfloat dqdx = gradq[idg + 0*p_Np];
+            const dfloat dqdy = gradq[idg + 1*p_Np];
+
+            p1 +=  dqdx; p2 +=  dqdx; 
+            q1 +=  dqdy; q2 +=  dqdy;
+
+
+            const dfloat pP = 0.5f*(p1+p2); 
+            const dfloat pQ = 0.5f*(q1+q2); 
+
+           
+            // back to original id 
+            const dlong id = e*p_Np*p_Nfields + n;
+            // LLF Numerical Hamiltonian
+            rhsq[id + fld*p_Np] =  -(( sqrt( pP*pP+pQ*pQ ))-0.5f*(p1-p2)-0.5*(q1-q2));
+          }
+        }
+      }
+    }
+  }
+  }
+}
+
+
+
+
+
+// in collocation way (weak form)
+@kernel void lssRedistanceSurfaceStrongTri2D(const dlong Nelements,
+                                  @restrict const  dfloat *  sgeo,
+                                  @restrict const  dfloat *  LIFT,
+                                  @restrict const  dlong  *  vmapM,
+                                  @restrict const  dlong  *  vmapP,
+                                  @restrict const  int    *  EToB,
+                                            const  dfloat time,
+                                  @restrict const  dfloat *  x,
+                                  @restrict const  dfloat *  y,
+                                  @restrict const  dfloat *  z,
+                                  @restrict const  dfloat *  q,
+                                  @restrict const  dfloat *  gradq,
+                                  @restrict dfloat *  rhsq){
+
+  // for all elements
+  for(dlong eo=0;eo<Nelements;eo+=p_NblockS;@outer(0)){
+
+    // @shared storage for flux terms
+    @shared dfloat s_ppf1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_ppf2[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_qpf1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_qpf2[p_NblockS][p_NfacesNfp];
+
+    @shared dfloat s_pmf1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_pmf2[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_qmf1[p_NblockS][p_NfacesNfp];
+    @shared dfloat s_qmf2[p_NblockS][p_NfacesNfp];
+
+    // for all face nodes of all elements
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int n=0;n<p_maxNodes;++n;@inner(0)){ // maxNodes = max(Nfp*Nfaces,Np)
+        const dlong e = eo + es;
+        if(e<Nelements){
+          if(n<p_NfacesNfp){
+            // find face that owns this node
+            const int face = n/p_Nfp;
+
+            // load surface geofactors for this face
+            const dlong sid   = p_Nsgeo*(e*p_Nfaces+face);
+            const dfloat nx   = sgeo[sid+p_NXID];
+            const dfloat ny   = sgeo[sid+p_NYID];
+            const dfloat sJ   = sgeo[sid+p_SJID];
+            const dfloat invJ = sgeo[sid+p_IJID];
+
+            // indices of negative and positive traces of face node
+            const dlong id  = e*p_Nfp*p_Nfaces + n;
+            const dlong idM = vmapM[id];
+            const dlong idP = vmapP[id];
+            // load traces
+            const dlong eM = e;
+            const dlong eP = idP/p_Np;
+            const int vidM = idM%p_Np;
+            const int vidP = idP%p_Np;
+
+            const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+            const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+            // load traces
+            const dfloat qpM = q[qbaseM + 0*p_Np];  dfloat qpP = q[qbaseP + 0*p_Np];
+            const dfloat qmM = q[qbaseM + 1*p_Np];  dfloat qmP = q[qbaseP + 1*p_Np];
+
+            // apply boundary condition
+            const int bc = EToB[face+p_Nfaces*e];
+            // if(bc>0){
+            //   lssDirichletConditions2D(bc, time, x[idM], y[idM], nx, ny, qM, &qP);
+            // }
+
+           const dfloat sc = invJ*sJ; 
+            // simple upwind
+            dfloat unx = 0.0, dnx = 1.0; 
+            dfloat uny = 0.0, dny = 1.0; 
+            if(nx>= 0){unx = 1.0, dnx = 0.0;}
+            if(ny>= 0){uny = 1.0, dny = 0.0;}
+
+            s_ppf1[es][n]= sc*nx*( (dnx*qpM  + unx*qpP) - qpM);
+            s_ppf2[es][n]= sc*nx*( (unx*qpM  + dnx*qpP) - qpM);
+            s_qpf1[es][n]= sc*ny*( (dny*qpM  + uny*qpP) - qpM);
+            s_qpf2[es][n]= sc*ny*( (uny*qpM  + dny*qpP) - qpM);
+
+            s_pmf1[es][n]= sc*nx*( (dnx*qmM  + unx*qmP) - qmM);
+            s_pmf2[es][n]= sc*nx*( (unx*qmM  + dnx*qmP) - qmM);
+            s_qmf1[es][n]= sc*ny*( (dny*qmM  + uny*qmP) - qmM);
+            s_qmf2[es][n]= sc*ny*( (uny*qmM  + dny*qmP) - qmM);
+          }
+        }
+      }
+    }
+
+    // wait for all @shared memory writes of the previous inner loop to complete
+
+
+    // for each node in the element
+    for(int es=0;es<p_NblockS;++es;@inner(1)){
+      for(int n=0;n<p_maxNodes;++n;@inner(0)){
+        const dlong e = eo + es;
+        if(e<Nelements){
+          if(n<p_Np){
+            dfloat pp1 = 0.f, pp2 = 0.f; 
+            dfloat qp1 = 0.f, qp2 = 0.f;   
+
+            dfloat pm1 = 0.f, pm2 = 0.f; 
+            dfloat qm1 = 0.f, qm2 = 0.f;   
+
+            const dfloat diff_p = rhsq[e*p_Np*p_Nfields + n + 0*p_Np];
+            const dfloat diff_m = rhsq[e*p_Np*p_Nfields + n + 1*p_Np];
+            // 
+            #pragma unroll p_NfacesNfp
+              for(int m=0;m<p_NfacesNfp;++m){
+                const dfloat L = LIFT[n+m*p_Np];
+                pp1 += L*s_ppf1[es][m];
+                pp2 += L*s_ppf2[es][m];
+                qp1 += L*s_qpf1[es][m];
+                qp2 += L*s_qpf2[es][m];
+
+                pm1 += L*s_pmf1[es][m];
+                pm2 += L*s_pmf2[es][m];
+                qm1 += L*s_qmf1[es][m];
+                qm2 += L*s_qmf2[es][m];
+              }
+
+            // ids on gradient
+            const dlong idg = e*p_Np*p_Nfields*p_dim + n;
+            const dfloat dqpdx = gradq[idg + 0*p_Np];
+            const dfloat dqpdy = gradq[idg + 1*p_Np];
+            const dfloat dqmdx = gradq[idg + 2*p_Np];
+            const dfloat dqmdy = gradq[idg + 3*p_Np];
+
+            pp1 +=  dqpdx; pp2 +=  dqpdx; 
+            qp1 +=  dqpdy; qp2 +=  dqpdy;
+
+            pm1 +=  dqmdx; pm2 +=  dqmdx; 
+            qm1 +=  dqmdy; qm2 +=  dqmdy;
+
+            const dfloat pP = 0.5f*(pp1+pp2); 
+            const dfloat pQ = 0.5f*(qp1+qp2); 
+
+            const dfloat mP = 0.5f*(pm1+pm2); 
+            const dfloat mQ = 0.5f*(qm1+qm2); 
+           
+            // back to original id 
+            const dlong id = e*p_Np*p_Nfields + n;
+            // LLF Numerical Hamiltonian
+            // rhsq[id + 0*p_Np] =  -(( sqrt( pP*pP+pQ*pQ ))-0.5f*(pp1-pp2)-0.5*(qp1-qp2)) + 0*diff_p;
+            // rhsq[id + 1*p_Np] =  -(( sqrt( mP*mP+mQ*mQ ))-0.5f*(pm1-pm2)-0.5*(qm1-qm2)) + 0*diff_m;
             rhsq[id + 0*p_Np] =  -(( sqrt( pP*pP+pQ*pQ ))-0.5f*(pp1-pp2)-0.5*(qp1-qp2));
             rhsq[id + 1*p_Np] =  -(( sqrt( mP*mP+mQ*mQ ))-0.5f*(pm1-pm2)-0.5*(qm1-qm2));
           }

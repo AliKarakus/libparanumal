@@ -83,6 +83,7 @@ class mesh_t {
   memory<int>   EToP;      // element-to-partition/process connectivity
   memory<int>   EToB;      // element-to-boundary condition type
   deviceMemory<int> o_EToB;
+  deviceMemory<int> o_EToE;
 
   memory<int>   mapB;      // node-to-boundary condition type
   deviceMemory<int> o_mapB;

@@ -25,12 +25,12 @@ SOFTWARE.
 */
 
 // in collocation way (!!!! strong form !!!!!! chage later AK!!!)
-@kernel void lssRedistanceVolumeHex3D(const dlong Nelements,
-                                  const  dfloat    t,
-                                  @restrict const  dfloat *  vgeo,
-                                  @restrict const  dfloat *  DT,
-                                  @restrict const  dfloat *  q,
-                                  @restrict        dfloat *  gradq){
+@kernel void lssRedistanceVolumeStrongHex3D(const dlong Nelements,
+                                            const  dfloat    t,
+                                            @restrict const  dfloat *  vgeo,
+                                            @restrict const  dfloat *  DT,
+                                            @restrict const  dfloat *  q,
+                                            @restrict        dfloat *  gradq){
 
   for(dlong e=0;e<Nelements;e++;@outer(0)){  // for all elements
 
@@ -101,7 +101,7 @@ SOFTWARE.
 }
 
 
-#define surfaceTerms(sk,face,m, i, j)                                   \
+#define surfaceTermsStrong(sk,face,m, i, j)                             \
 {                                                                       \
   const dlong  idM = vmapM[sk];                                         \
   const dlong  idP = vmapP[sk];                                         \
@@ -153,19 +153,19 @@ SOFTWARE.
   //   insVelocityDirichletConditions3D(bc, nu, time, x[idM], y[idM], z[idM], nx, ny, nz, uM, vM, wM, &uP, &vP, &wP); \
   // }                                                                     \
 
-@kernel void lssRedistanceSurfaceHex3D(const dlong Nelements,
-                                      @restrict const  dfloat *  sgeo,
-                                      @restrict const  dfloat *  LIFT,
-                                      @restrict const  dlong  *  vmapM,
-                                      @restrict const  dlong  *  vmapP,
-                                      @restrict const  int    *  EToB,
-                                            const  dfloat time,
-                                      @restrict const  dfloat *  x,
-                                      @restrict const  dfloat *  y,
-                                      @restrict const  dfloat *  z,
-                                      @restrict const  dfloat *  q,
-                                      @restrict const  dfloat *  gradq,
-                                      @restrict dfloat *  rhsq){
+@kernel void lssRedistanceSurfaceStrongHex3D(const dlong Nelements,
+                                            @restrict const  dfloat *  sgeo,
+                                            @restrict const  dfloat *  LIFT,
+                                            @restrict const  dlong  *  vmapM,
+                                            @restrict const  dlong  *  vmapP,
+                                            @restrict const  int    *  EToB,
+                                                  const  dfloat time,
+                                            @restrict const  dfloat *  x,
+                                            @restrict const  dfloat *  y,
+                                            @restrict const  dfloat *  z,
+                                            @restrict const  dfloat *  q,
+                                            @restrict const  dfloat *  gradq,
+                                            @restrict dfloat *  rhsq){
 
   // for all elements
   for(dlong e=0;e<Nelements;e++;@outer(0)){
@@ -210,8 +210,8 @@ SOFTWARE.
         const dlong sk0 = e*p_Nfp*p_Nfaces + 0*p_Nfp + i + j*p_Nq;
         const dlong sk5 = e*p_Nfp*p_Nfaces + 5*p_Nfp + i + j*p_Nq;
 
-        surfaceTerms(sk0,0,0,i,j);
-        surfaceTerms(sk5,5,1,i,j);
+        surfaceTermsStrong(sk0,0,0,i,j);
+        surfaceTermsStrong(sk5,5,1,i,j);
       }
     }
 
@@ -261,8 +261,8 @@ SOFTWARE.
         const dlong sk1 = e*p_Nfp*p_Nfaces + 1*p_Nfp + i + k*p_Nq;
         const dlong sk3 = e*p_Nfp*p_Nfaces + 3*p_Nfp + i + k*p_Nq;
 
-        surfaceTerms(sk1,1,0,i,k);
-        surfaceTerms(sk3,3,1,i,k);
+        surfaceTermsStrong(sk1,1,0,i,k);
+        surfaceTermsStrong(sk3,3,1,i,k);
       }
     }
 
@@ -321,8 +321,8 @@ SOFTWARE.
         const dlong sk2 = e*p_Nfp*p_Nfaces + 2*p_Nfp + j + k*p_Nq;
         const dlong sk4 = e*p_Nfp*p_Nfaces + 4*p_Nfp + j + k*p_Nq;
 
-        surfaceTerms(sk2,2,0,j,k);
-        surfaceTerms(sk4,4,1,j,k);
+        surfaceTermsStrong(sk2,2,0,j,k);
+        surfaceTermsStrong(sk4,4,1,j,k);
       }
     }
 

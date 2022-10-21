@@ -59,13 +59,21 @@ public:
     LIBP_FORCE_ABORT("rhsf not implemented in this solver");
   }
 
+
+  //Full rhs evaluation of solver in form dq/dt = rhsf(q,t)
+  virtual void rhsf_subcell(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_sq, 
+                            deviceMemory<dfloat>& o_rhs, deviceMemory<dfloat>& o_rhss, const dfloat time) {
+    LIBP_FORCE_ABORT("rhsf not implemented in this solver");
+  }
+
+
   //Full rhs evaluation of solver in form dq/dt = rhsf(q,t)
   virtual void postStep(deviceMemory<dfloat>& o_q, const dfloat time, const dfloat dt) {
     LIBP_FORCE_ABORT("postStep not implemented in this solver");
   }
 
   //Full rhs evaluation of solver in form dq/dt = rhsf(q,t)
-  virtual void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time) {
+  virtual void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhsq, const dfloat time, const dfloat dt) {
     LIBP_FORCE_ABORT("postStage not implemented in this solver");
   }
 

@@ -61,7 +61,20 @@ void lss_t::Report(dfloat time, int tstep){
       o_U.copyTo(U);
       PlotFields(q, std::string(fname));
     }else{
-      o_phi.copyTo(phi);
+      // o_phi.copyTo(phi);
+      dlong Nentries = mesh.Nelements*mesh.Np;
+
+      // deviceMemory<dfloat> o_test; o_test = platform.malloc<dfloat>(); 
+      o_gsphi.copyFrom(o_phi, Nentries);
+      lssogs.GatherScatter(o_gsphi, 1, ogs::Add, ogs::Sym); 
+
+      platform.linAlg().amx(Nentries, 1, o_weight, o_gsphi); 
+      o_gsphi.copyTo(phi); 
+
+
+
+
+
       o_q.copyTo(q);
       PlotFields(phi, std::string(fname));
       stab.Report(time,tstep); 

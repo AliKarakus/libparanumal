@@ -285,7 +285,7 @@ void mesh_t::Connect(){
       EToP[e*Nfaces+f] = rN;
     }
   }
-
+  o_EToE = platform.malloc<hlong>(EToE);
   //record the number of elements in the whole mesh
   NelementsGlobal = Nelements;
   comm.Allreduce(NelementsGlobal);

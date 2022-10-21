@@ -32,7 +32,15 @@ void lss_t::rhsf(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const d
   if(advection){
     Advection(o_Q, o_RHS, T);
   }else if(redistance){
-    Redistance(o_Q, o_RHS, T);
+    if(stab.stabType==Stab::FILTER){
+      RedistanceFilter(o_Q, o_RHS, T);
+    }else if(stab.stabType==Stab::ARTDIFF){
+      RedistanceArtdiff(o_Q, o_RHS, T);
+    // }else if(stab.stabType==Stab::SUBCELL){
+    //   RedistanceSubcell(o_Q, o_RHS, T);      
+    }else{ // Default to no-stabilization
+      Redistance(o_Q, o_RHS, T);
+    }
   }
 
 }
@@ -72,16 +80,24 @@ if(redistance){
 
   shiftIndex = (shiftIndex+Nrecon-1)%Nrecon;
 
+  // if(stab.stabType==Stab::SUBCELL){
+  //   stab.detectApply(o_Q, o_Q, time); 
+  // }
 }
 
 
 }
 
-void lss_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_RHS, const dfloat T){
+void lss_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_sQ, const dfloat T, const dfloat DT){
 
- // stab.stabilizerApply(o_Q, o_RHS, T);
 
-  // stab.Report(0,0); 
+// if(stab.stabType==Stab::SUBCELL){
+//  reconstructDGKernel(mesh.Nelements, 
+//                      stab.o_eList,
+//                      stab.o_RM,
+//                      o_sQ, 
+//                      o_Q);
+// }
 
 }
 
@@ -201,18 +217,9 @@ compressibleSurfaceKernel(mesh.Nelements,
 }
 
 
+// This uses strong form implementation
 void lss_t::Redistance(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
  
- if(stab.stabType==Stab::FILTER){
-  // Detect
-  stab.detectApply(o_Q, o_RHS, T); 
-  // Filter
-  filterKernel(mesh.Nelements, 
-               stab.o_eList, 
-               stab.o_filterM, 
-               o_Q); 
- }
-
   // extract q halo on DEVICE
   qTraceHalo.ExchangeStart(o_Q, 1);
 
@@ -240,3 +247,250 @@ void lss_t::Redistance(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
                           o_RHS);
 }
 
+
+
+// This form uses strong forms
+void lss_t::RedistanceFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
+ 
+ // if(stab.stabType==Stab::FILTER){
+  // Detect
+  stab.detectApply(o_Q, o_RHS, T); 
+  // Filter
+  filterKernel(mesh.Nelements, 
+               stab.o_eList, 
+               stab.o_filterM, 
+               o_Q); 
+ // }
+
+  // extract q halo on DEVICE
+  qTraceHalo.ExchangeStart(o_Q, 1);
+
+ redistanceVolumeKernel(mesh.Nelements,
+                       T,
+                       mesh.o_vgeo,
+                       mesh.o_D,
+                       o_Q,
+                       o_gradq);
+
+  qTraceHalo.ExchangeFinish(o_Q, 1);
+
+  redistanceSurfaceKernel(mesh.Nelements,
+                          mesh.o_sgeo,
+                          mesh.o_LIFT,
+                          mesh.o_vmapM,
+                          mesh.o_vmapP,
+                          mesh.o_EToB,
+                          T,
+                          mesh.o_x,
+                          mesh.o_y,
+                          mesh.o_z,
+                          o_Q,
+                          o_gradq,
+                          o_RHS);
+}
+
+
+
+// This solver uses strong from
+void lss_t::RedistanceArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
+  
+  stab.detectApply(o_Q, o_RHS, T); 
+
+  const dfloat alpha = 3.0; 
+  stab.computeViscosityKernel(mesh.Nelements, 
+                              alpha, 
+                              stab.o_viscRamp,
+                              stab.o_viscScale,
+                              stab.o_visc); 
+
+  // extract q halo on DEVICE
+  qTraceHalo.ExchangeStart(o_Q, 1);
+
+  // compute gradient volume: should be in strong form
+ redistanceVolumeKernel(mesh.Nelements,
+                       T,
+                       mesh.o_vgeo,
+                       mesh.o_D,
+                       o_Q,
+                       o_gradq);
+
+  // We can combine q and gradq : AK
+  qTraceHalo.ExchangeFinish(o_Q, 1);
+
+  // Surface Kernel
+  redistanceSurfaceKernel(mesh.Nelements,
+                          mesh.o_sgeo,
+                          mesh.o_LIFT,
+                          mesh.o_vmapM,
+                          mesh.o_vmapP,
+                          mesh.o_EToB,
+                          T,
+                          mesh.o_x,
+                          mesh.o_y,
+                          mesh.o_z,
+                          o_Q,
+                          o_gradq,
+                          o_RHS);
+
+// // // *********************************************************/
+//   // // qTraceHalo.ExchangeStart(o_Q, 1);
+
+//   // // Compute Volume Contribution
+//   // gradientVolumeKernel(mesh.Nelements,
+//   //                     mesh.o_vgeo,
+//   //                     mesh.o_D,
+//   //                     o_Q,
+//   //                     o_dGq);
+
+  // qTraceHalo.ExchangeFinish(o_Q, 1);
+
+  // Add Surface Compute Surface Conribution
+  gradientSurfaceKernel(mesh.Nelements,
+                       mesh.o_sgeo,
+                       mesh.o_LIFT,
+                       mesh.o_vmapM,
+                       mesh.o_vmapP,
+                       mesh.o_EToB,
+                       T,
+                       mesh.o_x,
+                       mesh.o_y,
+                       mesh.o_z,
+                       o_Q,
+                       o_gradq);
+
+  gTraceHalo.ExchangeStart(o_gradq, 1); 
+
+  divergenceVolumeKernel(mesh.Nelements,
+                        mesh.o_vgeo,
+                        mesh.o_D,
+                        stab.o_visc,
+                        o_gradq,
+                        o_RHS); // ?
+
+  gTraceHalo.ExchangeFinish(o_gradq, 1); 
+
+
+  divergenceSurfaceKernel(mesh.Nelements,
+                           mesh.o_sgeo,
+                           mesh.o_LIFT,
+                           mesh.o_vmapM,
+                           mesh.o_vmapP,
+                           mesh.o_EToB,
+                           qTau,
+                           T,
+                           mesh.o_x,
+                           mesh.o_y,
+                           mesh.o_z,
+                           stab.o_visc,
+                           o_Q,
+                           o_gradq,
+                           o_RHS);
+}
+
+
+
+
+
+void lss_t::rhsf_subcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_sQ,
+                             deviceMemory<dfloat>& o_RHS, deviceMemory<dfloat>& o_sRHS, const dfloat T){
+
+// projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
+//                   stab.o_eList, 
+//                   stab.o_PM,
+//                   o_Q,
+//                   o_sQ);
+
+
+
+// reconstructDGKernel(mesh.Nelements, 
+//                      stab.o_eList,
+//                      stab.o_RM,
+//                      o_sQ, 
+//                      o_Q);
+
+ if(stab.stabType==Stab::SUBCELL){
+    stab.detectApply(o_Q, o_Q, T); 
+  }
+
+  // extract q halo on DEVICE
+  qTraceHalo.ExchangeStart(o_Q, 1);
+
+ redistanceVolumeKernel(mesh.Nelements,
+                       T,
+                       stab.o_eList, 
+                       mesh.o_vgeo,
+                       mesh.o_DW,
+                       o_Q,
+                       o_gradq);
+
+  qTraceHalo.ExchangeFinish(o_Q, 1);
+
+  // Get cell averages from nodal solution
+  projectDGKernel((mesh.Nelements + mesh.totalHaloPairs),
+                   stab.o_eList, 
+                   mesh.o_vmapM,
+                   stab.o_mFToE,
+                   stab.o_mFToF,
+                   stab.o_PFM,
+                   o_Q,
+                   o_sface);
+
+  redistanceSurfaceKernel(mesh.Nelements,
+                          stab.o_eList, 
+                          mesh.o_sgeo,
+                          mesh.o_LIFT,
+                          mesh.o_vmapM,
+                          mesh.o_vmapP,
+                          mesh.o_EToB,
+                          T,
+                          mesh.o_x,
+                          mesh.o_y,
+                          mesh.o_z,
+                          o_Q,
+                          o_gradq,
+                          o_RHS);
+
+    // Get cell averages from nodal solution
+    projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
+                  stab.o_eList, 
+                  stab.o_PM,
+                  o_Q,
+                  o_sQ);
+
+
+     // Reconstruct face values for all subcells 
+     reconstructFaceKernel(mesh.Nelements, 
+                          stab.o_eList,
+                          stab.o_vgeo,
+                          stab.o_sgeo, 
+                          stab.o_emapP,
+                          stab.o_fmapP, 
+                          o_Q, 
+                          o_sQ,
+                          o_sface);  
+
+
+       // FV compute 
+     subcellComputeKernel(mesh.Nelements, 
+                              stab.o_eList,
+                              stab.o_emapP,
+                              stab.o_fmapP, 
+                              stab.o_RM,
+                              stab.o_vgeo,
+                              stab.o_sgeo, 
+                              o_Q,
+                              o_sface, 
+                              o_sRHS);  
+
+
+if(stab.stabType==Stab::SUBCELL){
+ reconstructDGKernel(mesh.Nelements, 
+                     stab.o_eList,
+                     stab.o_RM,
+                     o_sRHS, 
+                     o_RHS);
+}
+
+
+
+}

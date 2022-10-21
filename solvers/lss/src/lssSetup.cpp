@@ -57,11 +57,21 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
   }
 
   //setup linear algebra module
-  platform.linAlg().InitKernels({"innerProd", "max"});
+  platform.linAlg().InitKernels({"innerProd", "max", "amx"});
 
   /*setup trace halo exchange */
   qTraceHalo = mesh.HaloTraceSetup(Nfields); 
-  vTraceHalo = mesh.HaloTraceSetup(mesh.dim); //velocity field
+  if(advection){
+    vTraceHalo = mesh.HaloTraceSetup(mesh.dim); //velocity field
+  }
+
+  // Gradient Trace Halo Setup for artificial diffusion
+  if(stab.stabType==Stab::ARTDIFF){
+    // gTraceHalo = mesh.HaloTraceSetup(Nfields); 
+    gTraceHalo = mesh.HaloTraceSetup(Nfields*mesh.dim); 
+  }
+
+
 
   //setup timeStepper
   if (settings.compareSetting("TIME INTEGRATOR","AB3")){
@@ -69,9 +79,15 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
                                         mesh.totalHaloPairs,
                                         mesh.Np, Nfields, platform, comm);
   } else if (settings.compareSetting("TIME INTEGRATOR","LSERK4")){
+    if(stab.stabType==Stab::SUBCELL){
+    timeStepper.Setup<TimeStepper::lserk4_subcell>(mesh.Nelements,
+                                           mesh.totalHaloPairs,
+                                           mesh.Np, Nfields, stab.Nsubcells, platform, comm);
+    }else{
     timeStepper.Setup<TimeStepper::lserk4>(mesh.Nelements,
                                            mesh.totalHaloPairs,
                                            mesh.Np, Nfields, platform, comm);
+  }
   } else if (settings.compareSetting("TIME INTEGRATOR","DOPRI5")){
     timeStepper.Setup<TimeStepper::dopri5>(mesh.Nelements,
                                            mesh.totalHaloPairs,
@@ -84,7 +100,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
   if(redistance){
     // this holds the gradient of qM, qP
-    gradq.malloc(Nlocal*Nfields*mesh.dim);
+    gradq.malloc((Nlocal+Nhalo)*Nfields*mesh.dim);
     o_gradq = platform.malloc<dfloat>(gradq);
 
     phi.malloc(Nlocal+Nhalo); 
@@ -104,6 +120,24 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     phiH.malloc(Nlocal*Nfields*Nrecon); 
     o_phiH = platform.malloc<dfloat>(phiH); 
 
+
+     // used for the weight in linear solvers (used in C0)
+    bool verbose = false; 
+    bool unique  = true; 
+    lssogs.Setup(mesh.Nelements*mesh.Np, mesh.globalIds, mesh.comm, 
+                  ogs::Signed, ogs::Auto, unique, verbose, platform); 
+
+    weight.malloc(Nlocal, 1.0);
+
+    lssogs.GatherScatter(weight, 1, ogs::Add, ogs::Sym); 
+    
+    for(int i=0; i < Nlocal ; i++ ){ weight[i] = 1./weight[i];}
+    // lssogs.free();
+    o_weight = platform.malloc<dfloat>(weight); 
+    o_gsphi = platform.malloc<dfloat>(phi); 
+
+    
+
   }else if(advection){
     U.malloc((Nlocal+Nhalo)*mesh.dim);
     o_U = platform.malloc<dfloat>(U);
@@ -116,7 +150,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
   mesh.MassMatrixKernelSetup(1); // mass matrix operator
 
   // OCCA build stuff
-  properties_t kernelInfo = mesh.props; /*copy base occa properties*/
+  properties_t kernelInfo = stab.props; /*copy base occa properties*/
 
   //add boundary data to kernel info
   std::string dataFileName;
@@ -142,11 +176,14 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
   int maxNodes = std::max(mesh.Np, (mesh.Nfp*mesh.Nfaces));
   kernelInfo["defines/" "p_maxNodes"]= maxNodes;
 
-  int NblockV = std::max(1, blockMax/mesh.Np);
-  kernelInfo["defines/" "p_NblockV"]= NblockV;
+  // int NblockV = std::max(1, blockMax/mesh.Np);
+  // kernelInfo["defines/" "p_NblockV"]= NblockV;
 
-  int NblockS = std::max(1, blockMax/maxNodes);
-  kernelInfo["defines/" "p_NblockS"]= NblockS;
+  // int NblockS = std::max(1, blockMax/maxNodes);
+  // kernelInfo["defines/" "p_NblockS"]= NblockS;
+
+  kernelInfo["defines/" "p_NblockV"]= 1;
+  kernelInfo["defines/" "p_NblockS"]= 1;
 
   kernelInfo["defines/" "p_Nfields"]= Nfields;
   kernelInfo["defines/" "p_Nrecon"] = Nrecon;
@@ -212,19 +249,145 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
   }else if(redistance){
 
-    fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
-    kernelName = "lssRedistanceVolume" + suffix; 
-    redistanceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+    if(stab.stabType==Stab::FILTER){
+      kernelInfo["defines/" "p_Nq"]= mesh.N + 1;
 
-    fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
-    kernelName = "lssRedistanceSurface" + suffix;
-    redistanceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+      fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+      kernelName = "lssRedistanceVolumeStrong" + suffix; 
+      redistanceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+      // kernelName = "lssRedistanceVolume" + suffix; 
+      // redistanceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+
+      fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+      kernelName = "lssRedistanceSurfaceStrong" + suffix;
+      redistanceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+      // kernelName = "lssRedistanceSurface" + suffix;
+      // redistanceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+      fileName   = oklFilePrefix + "lssFilter" +  oklFileSuffix;
+      kernelName = "lssFilter" + suffix; 
+      filterKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+    }else if(stab.stabType==Stab::ARTDIFF){
+
+      //set penalty for IPDG
+    if (mesh.elementType==Mesh::TRIANGLES ||
+        mesh.elementType==Mesh::QUADRILATERALS){
+      qTau = 2.0*(mesh.N+1)*(mesh.N+2)/2.0;
+      if(mesh.dim==3)
+        qTau *= 1.5;
+    } else{
+       qTau = 2.0*(mesh.N+1)*(mesh.N+3);
+    }
+
+    // qTau *= 10;
+
+     // dGq.malloc((Nlocal+Nhalo)*Nfields*4); 
+     // o_dGq = platform.malloc<dfloat>(dGq);
+
+     // dGq.malloc((Nlocal+Nhalo)*Nfields*4); 
+     // o_dGq = platform.malloc<dfloat>(dGq);
+
+     fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+     kernelName = "lssRedistanceVolumeStrong" + suffix; 
+     redistanceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+     kernelName = "lssRedistanceSurfaceStrong" + suffix;
+     redistanceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+     fileName       = oklFilePrefix + "lssArtdiff" + suffix + oklFileSuffix;
+     kernelName     = "lssGradientVolume" + suffix;
+     gradientVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     // fileName       = oklFilePrefix + "lssArtdiff" + suffix + oklFileSuffix;
+     kernelName     = "lssGradientSurface" + suffix;
+     gradientSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     // // fileName       = oklFilePrefix + "lssArtdiff" + suffix + oklFileSuffix;
+     kernelName     = "lssDivergenceVolume" + suffix;
+     divergenceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     // // fileName       = oklFilePrefix + "lssArtdiff" + suffix + oklFileSuffix;
+     kernelName     = "lssDivergenceSurface" + suffix;
+     divergenceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     // fileName   = oklFilePrefix + "lssArtdiff" + oklFileSuffix;
+     // kernelName = "lssDiffusion" + suffix;
+     // diffusionKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+    }else if(stab.stabType==Stab::SUBCELL){
+     
+      sface.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*stab.Nfaces*Nfields);
+      o_sface = platform.malloc<dfloat>(sface); 
+
+      // sq.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*Nfields);
+      // o_sq = platform.malloc<dfloat>(sface); 
+
+      // memory<dfloat> sRHS((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*Nfields);
+      // o_sRHS = platform.malloc<dfloat>(sRHS); 
+
+     fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+     kernelName = "lssRedistancePartialVolumeWeak" + suffix; 
+     redistanceVolumeKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     fileName   = oklFilePrefix + "lssRedistance" + suffix + oklFileSuffix;
+     kernelName = "lssRedistancePartialSurfaceWeak" + suffix;
+     redistanceSurfaceKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     
+     fileName        = oklFilePrefix + "lssSubcell"  + suffix + oklFileSuffix;
+     
+     kernelName      = "lssProjectFV" + suffix; 
+     projectFVKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     kernelName      = "lssProjectDG" + suffix; 
+     projectDGKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     kernelName            = "lssReconstructFace" + suffix; 
+     reconstructFaceKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     kernelName            = "lssReconstructDG" + suffix; 
+     reconstructDGKernel   =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     kernelName            = "lssSubcellCompute" + suffix; 
+     subcellComputeKernel  =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+
+    }else if(stab.stabType==Stab::LIMITER){
+
+    }else{
+
+
+
+
+    }
+
+
+
+
 
 
     
     fileName   = oklFilePrefix + "lssRedistanceUtilites" + oklFileSuffix;
     kernelName = "lssRedistanceSetFields";
     redistanceSetFieldsKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
+
+
+
+
+
+
 
     if(settings.compareSetting("TIME RECONSTRUCTION", "ENO2")){ 
     kernelName = "redistanceReconstructENO2"; 
@@ -245,13 +408,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
   }
 
 
-  if(stab.stabType==Stab::FILTER){
-    kernelInfo["defines/" "p_Nq"]= mesh.N + 1;
-    std::cout<<"I am here"<<std::endl;
-    fileName   = oklFilePrefix + "lssFilter" +  oklFileSuffix;
-    kernelName = "lssFilter" + suffix; 
-    filterKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
-  }
+  
 
 
 

@@ -30,15 +30,10 @@ SOFTWARE.
 {                                       \
   const dfloat xc = 0.5;           \
   const dfloat yc = 0.5;         \
-  const dfloat rc = 0.5;          \
-  (*q) = (x-xc)*(x-xc) + (y-yc)*(y-yc) - rc ; \
+  const dfloat rc = 0.25;          \
+  (*q) = pow( (x-1.0)*(x-1.0) + (y-1.0)*(y-1.0) + 0.1, 1.0 )*(sqrt((x-xc)*(x-xc) + (y-yc)*(y-yc)) - rc) ; \
 }
 
-  // (*q) = pow( (x-1.0)*(x-1.0) + (y-1.0)*(y-1.0) + 0.1, 1.0 )*(sqrt((x-xc)*(x-xc) + (y-yc)*(y-yc)) - rc) ; \
-
-//(*q) = (sqrt((x-xc)*(x-xc) + (y-yc)*(y-yc)) - rc) ; \
-  // (*q) = pow( (x-1.0)*(x-1.0) + (y-1.0)*(y-1.0) + 0.1, 1.0 )*(sqrt((x-xc)*(x-xc) + (y-yc)*(y-yc)) - rc) ; \
- 
 // // LS Advective field
 // #define lssAdvectionField2D(t, x, y, u, v) \
 // {                                       \

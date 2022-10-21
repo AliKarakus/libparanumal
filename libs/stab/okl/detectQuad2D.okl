@@ -582,6 +582,7 @@
 	    // ElementList[e*p_dNfields + n] = sk >= s0  ? 1.0: 0.0; 
 	    const dfloat kappa = 1.0; 
 	    ElementList[e*p_dNfields + n] = (sk < (s0-kappa))  ? 0: 1; 
+	    // ElementList[e*p_dNfields + n] = 1; 
 	  }
 	}
       }
@@ -714,6 +715,10 @@
 	    
 	    const dfloat kappa = 1.0; 
 	    ElementList[e*p_dNfields + n] = (sk < (s0-kappa))  ? 0.0: 1.0; 
+
+			// artVisc[e*p_dNfields + n] = 1.0f; //0.f; 
+			
+
 
 	    if(sk<(s0-kappa))
 				artVisc[e*p_dNfields + n] = 0.f; //0.f; 

@@ -635,6 +635,7 @@
 	    			const dfloat s0  = -4.f*log10f( (float) (N) );	    
 	    			const dfloat kappa = 1.0; 
 	          ElementList[e*p_dNfields + n] = (sk < (s0-kappa))  ? 0.0: 1.0; 
+	          // ElementList[e*p_dNfields + n] = 1; 
 	  			}
 				}
       }
@@ -800,6 +801,84 @@
 
   }
 }
+
+
+
+@kernel void detectFindNeighTri2D(const dlong Nelements,
+																	// @restrict const int * EToE, 
+	                                @restrict const  dlong  *  vmapP,
+																	@restrict dlong *  ElementList){
+
+  for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
+
+	 for(int fld=0; fld<p_dNfields; fld++){
+			// int fld = 0;
+      const int em_type = ElementList[e*p_dNfields + fld];
+      int ep_type[p_Nfaces]; 
+		      
+      if(em_type==s_DGDG_TYPE){
+
+      	int all_fv = 0, en_type = s_DGDG_TYPE; 
+
+      	for(int f=0; f<p_Nfaces; f++){
+
+      		// const int ep = EToE[n*p_Nfaces + f];
+      		const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
+      		const int ep = vmapP[idf]/p_Np;
+      	  ep_type[f]   =  ElementList[ep*p_dNfields + fld];
+      	  if(ep_type[f] ==s_FVFV_TYPE){ 
+      	  	en_type = s_DGFV_TYPE; 
+      	  	all_fv +=1; 
+      	  }
+        }
+
+   			if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}
+					     
+					ElementList[e*p_dNfields + fld] = en_type; 
+			}
+    }
+  }
+}
+
+
+
+
+
+
+// @kernel void detectFindNeighTri2D(const dlong Nelements,
+// 																	@restrict const int * EToE, 
+// 																	@restrict dlong *  ElementList){
+
+//   for(dlong n=0;n<Nelements;++n;@tile(p_blockSize,@outer,@inner)){
+
+//     	 // for(int fld=0; fld<p_dNfields; fld++){
+//   				int fld = 0;
+// 		      const int elmType = ElementList[n*p_dNfields + fld];
+
+// 		      if(elmType==s_DGDG_TYPE){
+// 						int neighType = s_DGDG_TYPE; 
+// 						// if any of the face is connected to FV cell, mark it
+// 						int all_fv = 0; 
+// 						for(int f=0; f<p_Nfaces; f++){
+
+// 						  const int eP = EToE[n*p_Nfaces + f];
+
+// 						  // should be fine since we never modify FVFV cell 
+// 						  if(ElementList[eP*p_dNfields + fld]==s_FVFV_TYPE)
+// 						  { 
+// 						    neighType = s_DGFV_TYPE; 
+// 						    all_fv +=1;  
+// 						  }
+// 						}
+
+// 					if(all_fv == p_Nfaces)
+// 						neighType = s_FVFV_TYPE; 
+					     
+// 					ElementList[n*p_dNfields + fld] = neighType; 
+// 				}
+//     // }
+//   }
+// }
 
 
 

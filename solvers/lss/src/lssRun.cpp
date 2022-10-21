@@ -87,29 +87,10 @@ void lss_t::Run(){
   dfloat dt = cfl/(vmax*(mesh.N+1.)*(mesh.N+1.));
   timeStepper.SetTimeStep(dt);
 
-  // // Test Detector
-  // stab.detectApply(o_q, o_q, 0.0); 
-
-  // stab.Report(0,0); 
-
-
-
-  // Report(dt,0);
-
-  // // filterKernel(mesh.Nelements, 
-  // //              stab.o_eList, 
-  // //              stab.o_filterM, 
-  // //              o_q); 
-
-  // Report(dt,1);
-
-  // Stabilize Initial Condition
-  // stab.StabiliApply(o_q, o_q, 0);
-
-  // Report(dt,1);
+  stab.detectApply(o_q, o_q, 0.0); 
 
   timeStepper.Run(*this, o_q, startTime, finalTime);
-
+ 
   // // output norm of final solution
   // {
   //   //compute q.M*q

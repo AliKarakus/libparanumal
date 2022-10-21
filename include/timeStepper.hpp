@@ -525,6 +525,25 @@ public:
             platform_t& _platform, comm_t _comm);
 };
 
+
+
+/* Low-Storage Explicit Runge-Kutta, order 4 */
+class lserk4_subcell: public lserk4 {
+private:
+  dlong Ns;
+
+  deviceMemory<dfloat> o_sq;
+  deviceMemory<dfloat> o_rhssq;
+  deviceMemory<dfloat> o_ressq;
+
+  void Step(solver_t& solver, deviceMemory<dfloat>& o_q, dfloat time, dfloat dt);
+
+public:
+  lserk4_subcell(dlong Nelements, dlong NhaloElements,
+            int Np, int Nfields, int Nsubcell,
+            platform_t& _platform, comm_t _comm);
+};
+
 /* Dormand-Prince method */
 /* Explict Runge-Kutta, order 5 with embedded order 4 and adaptive time-stepping */
 class dopri5_pml: public dopri5 {

@@ -33,7 +33,7 @@ void stab_t::Setup(platform_t& _platform, mesh_t &_mesh, stabSettings_t& _settin
   platform = _platform;
   settings = _settings;
   mesh     = _mesh;
-  comm     = _mesh.comm; 
+  comm     = _mesh.comm;  // copy base mesh communicator
   props    =  mesh.props; // copy base mesh props
 
 

@@ -53,7 +53,6 @@ void stab_t::setTypes(const Stab::SolverType sType,
     
 
 // Set Detector Type
-
 if (dType==Stab::KLOCKNER) {
     detectorType = Stab::KLOCKNER;
  }else if (dType==Stab::PERSSON) {
@@ -80,9 +79,6 @@ if (stType==Stab::FILTER) {
 std::cout<<"Solver Type: "<< solverType<<std::endl; 
 std::cout<<"Detector Type: "<< detectorType<<std::endl; 
 std::cout<<"Stabilization Type: "<< stabType<<std::endl; 
-
-// stabType = Stab::FILTER;  
-
 
 props["defines/" "p_sNfields"]= sNfields;
 props["defines/" "p_dNfields"]= dNfields;

@@ -26,7 +26,7 @@ SOFTWARE.
 
 //mean flow
 #define RBAR 1.0
-#define UBAR 1.0
+#define UBAR 0.1
 #define VBAR 0.0
 
 // Initial conditions
