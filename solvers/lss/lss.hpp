@@ -58,11 +58,7 @@ public:
   int Nfields; // Number of fields for level set 
   int Nrecon; // Number of history points for reconstruction  
   
-  dlong offset; 
-  int shiftIndex; 
-  int historyIndex; 
-  // dfloat eps; // regularization thickness for level set function
-
+  // dlong offset; 
   mesh_t mesh;
   stab_t stab; 
   timeStepper_t timeStepper;
@@ -88,13 +84,10 @@ public:
   memory<dfloat> reconstructTime; 
   deviceMemory<dfloat> o_reconstructTime; 
 
- 
-
   deviceMemory<dfloat> o_Mq;
 
   kernel_t advectionVolumeKernel;
   kernel_t advectionSurfaceKernel;
-
 
   kernel_t advectionCubVolumeKernel;
   kernel_t advectionCubSurfaceKernel;
@@ -128,15 +121,18 @@ public:
   ogs::ogs_t lssogs;
   deviceMemory<dfloat> o_gsphi; 
 
-
   memory<dfloat> sface; 
   deviceMemory<dfloat> o_sface;
 
+  memory<dfloat> srhs; 
+  deviceMemory<dfloat> o_srhs;
+
+  memory<dfloat> sq; 
+  deviceMemory<dfloat> o_sq;
+
+
   memory<dfloat> weight; 
   deviceMemory<dfloat> o_weight; 
-
-  // memory<dfloat> sq; 
-  // deviceMemory<dfloat> o_sq;
 
   kernel_t projectFVKernel; // project DG -> Cell Centers
   kernel_t projectDGKernel; // project DG -> Cell Faces at DG-FV Interface
@@ -164,19 +160,22 @@ public:
   void RedistanceFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
   void RedistanceArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
   void RedistanceSubcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
+
+  void rhsf_subcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, 
+                    deviceMemory<dfloat>& o_sQ, deviceMemory<dfloat>& o_sRHS, const dfloat T); 
  
   void Report(dfloat time, int tstep);
 
   void PlotFields(memory<dfloat> Q, const std::string fileName);
 
   void rhsf(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
-  void rhsf_subcell(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_sq, 
-                    deviceMemory<dfloat>& o_rhs, deviceMemory<dfloat>& o_rhss, const dfloat time);
-  
+  void reconstruct(deviceMemory<dfloat>& o_q, const dfloat time);
+
+
   void postStep(deviceMemory<dfloat>& o_q,  const dfloat time, const dfloat dt);
   void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time, const dfloat dt);
 
-
+  
 };
 
 

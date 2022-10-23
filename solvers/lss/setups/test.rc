@@ -2,17 +2,20 @@
 2.0
 
 [DATA FILE]
+data/lssCircle2D.h
+#data/lssElliptic2D.h
+#data/lssSquare2D.h
+#data/lssMultipleInterfaces2D.h
+
 #data/test2D.h
 #data/test3D.h
+
 #data/lssVortex2D.h
-#data/lssCircle2D.h
-data/lssSquare2D.h
-#data/lssMultipleInterfaces2D.h
 #data/lssCircle3D.h
 #data/lssSBRotation.h
 
 [MESH FILE]
-../../meshes/lssTest3Tri2D.msh
+../../meshes/lssTest1Tri2D.msh
 #../../meshes/lssTri.msh
 #../../meshes/lssQuad.msh
 #../../meshes/lssTet.msh
@@ -53,7 +56,7 @@ data/lssSquare2D.h
 1
 
 [POLYNOMIAL DEGREE]
-3
+5
 
 [THREAD MODEL]
 CUDA
@@ -88,7 +91,7 @@ ENO2
 
 # Klockner: 1 Persson: 2
 [DETECTOR TYPE]
-2
+1
 
 # Filter: 1, Limiter: 2, Artdiff: 3, Subcell: 4
 [STAB TYPE]
@@ -103,7 +106,7 @@ ENO2
 #2
 
 [SUBCELL NUMBER]
-5
+6
 
 [SUBCELL MINOR GRID]
 #EQUISPACED

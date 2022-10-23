@@ -56,6 +56,10 @@ class timeStepper_t {
 
   dfloat GetGamma();
 
+  void SetOutputStep(bool _outputStep);
+
+  bool isOutputStep();
+
  private:
   std::shared_ptr<TimeStepper::timeStepperBase_t> ts=nullptr;
 
@@ -75,6 +79,9 @@ public:
 
   dfloat dt;
 
+  bool outputStep; 
+
+
   timeStepperBase_t(dlong Nelements, dlong NhaloElements,
                     int Np, int Nfields,
                     platform_t& _platform, comm_t _comm):
@@ -86,8 +93,12 @@ public:
   virtual void Run(solver_t& solver, deviceMemory<dfloat>& o_q, dfloat start, dfloat end)=0;
 
   void SetTimeStep(dfloat dt_) {dt = dt_;};
-
   dfloat GetTimeStep() {return dt;};
+
+  void SetOutputStep(bool _outputStep) {outputStep = _outputStep;};
+
+  bool isOutputStep() {return outputStep;};
+
 
   virtual dfloat GetGamma() {
     LIBP_FORCE_ABORT("GetGamma() not available in this Timestepper");
@@ -527,22 +538,23 @@ public:
 
 
 
-/* Low-Storage Explicit Runge-Kutta, order 4 */
-class lserk4_subcell: public lserk4 {
-private:
-  dlong Ns;
+// /* Low-Storage Explicit Runge-Kutta, order 4 */
+// class lserk4_subcell: public lserk4 {
+// private:
+//   dlong Ns;
 
-  deviceMemory<dfloat> o_sq;
-  deviceMemory<dfloat> o_rhssq;
-  deviceMemory<dfloat> o_ressq;
+//   deviceMemory<dfloat> o_sq;
+//   deviceMemory<dfloat> o_rhssq;
+//   deviceMemory<dfloat> o_ressq;
 
-  void Step(solver_t& solver, deviceMemory<dfloat>& o_q, dfloat time, dfloat dt);
+//   void Step(solver_t& solver, deviceMemory<dfloat>& o_q, dfloat time, dfloat dt);
 
-public:
-  lserk4_subcell(dlong Nelements, dlong NhaloElements,
-            int Np, int Nfields, int Nsubcell,
-            platform_t& _platform, comm_t _comm);
-};
+// public:
+//   lserk4_subcell(dlong Nelements, dlong NhaloElements,
+//             int Np, int Nfields, int Nsubcell,
+//             platform_t& _platform, comm_t _comm);
+// };
+
 
 /* Dormand-Prince method */
 /* Explict Runge-Kutta, order 5 with embedded order 4 and adaptive time-stepping */

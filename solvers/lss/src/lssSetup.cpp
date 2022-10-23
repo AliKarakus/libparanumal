@@ -57,7 +57,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
   }
 
   //setup linear algebra module
-  platform.linAlg().InitKernels({"innerProd", "max", "amx"});
+  platform.linAlg().InitKernels({"innerProd", "max", "amx", "set"});
 
   /*setup trace halo exchange */
   qTraceHalo = mesh.HaloTraceSetup(Nfields); 
@@ -79,15 +79,15 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
                                         mesh.totalHaloPairs,
                                         mesh.Np, Nfields, platform, comm);
   } else if (settings.compareSetting("TIME INTEGRATOR","LSERK4")){
-    if(stab.stabType==Stab::SUBCELL){
-    timeStepper.Setup<TimeStepper::lserk4_subcell>(mesh.Nelements,
-                                           mesh.totalHaloPairs,
-                                           mesh.Np, Nfields, stab.Nsubcells, platform, comm);
-    }else{
+    //  if(stab.stabType==Stab::SUBCELL){
+    // timeStepper.Setup<TimeStepper::lserk4_subcell>(mesh.Nelements,
+    //                                        mesh.totalHaloPairs,
+    //                                        mesh.Np, Nfields, stab.Nsubcells, platform, comm);
+    // }else{
     timeStepper.Setup<TimeStepper::lserk4>(mesh.Nelements,
                                            mesh.totalHaloPairs,
                                            mesh.Np, Nfields, platform, comm);
-  }
+    // }
   } else if (settings.compareSetting("TIME INTEGRATOR","DOPRI5")){
     timeStepper.Setup<TimeStepper::dopri5>(mesh.Nelements,
                                            mesh.totalHaloPairs,
@@ -106,6 +106,15 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     phi.malloc(Nlocal+Nhalo); 
     o_phi = platform.malloc<dfloat>(phi); 
 
+    srhs.malloc(mesh.Nelements*stab.Nsubcells*Nfields); 
+    o_srhs = platform.malloc<dfloat>(srhs); 
+
+    sq.malloc(mesh.Nelements*stab.Nsubcells*Nfields); 
+    o_sq = platform.malloc<dfloat>(sq); 
+
+    sface.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*stab.Nfaces*Nfields);
+    o_sface = platform.malloc<dfloat>(sface); 
+
     // this saves the history for qP, and qM for recontruction
     if(settings.compareSetting("TIME RECONSTRUCTION", "ENO2")){
       Nrecon = 4; // Second order reconstruction, 
@@ -113,7 +122,6 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
       Nrecon = 6; // Third order reconstruction
     }
 
-    
     reconstructTime.malloc(Nrecon); 
     o_reconstructTime = platform.malloc<dfloat>(reconstructTime); 
 
@@ -132,11 +140,9 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     lssogs.GatherScatter(weight, 1, ogs::Add, ogs::Sym); 
     
     for(int i=0; i < Nlocal ; i++ ){ weight[i] = 1./weight[i];}
-    // lssogs.free();
+
     o_weight = platform.malloc<dfloat>(weight); 
     o_gsphi = platform.malloc<dfloat>(phi); 
-
-    
 
   }else if(advection){
     U.malloc((Nlocal+Nhalo)*mesh.dim);
@@ -325,9 +331,6 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
     }else if(stab.stabType==Stab::SUBCELL){
      
-      sface.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*stab.Nfaces*Nfields);
-      o_sface = platform.malloc<dfloat>(sface); 
-
       // sq.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*Nfields);
       // o_sq = platform.malloc<dfloat>(sface); 
 
@@ -359,8 +362,6 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
      kernelName            = "lssSubcellCompute" + suffix; 
      subcellComputeKernel  =  platform.buildKernel(fileName, kernelName, kernelInfo); 
-
-
 
     }else if(stab.stabType==Stab::LIMITER){
 

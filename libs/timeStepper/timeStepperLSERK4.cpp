@@ -99,6 +99,8 @@ void lserk4::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
 
     if (time<outputTime && time+dt>=outputTime) {
 
+      SetOutputStep(true); 
+
       //save current state
       o_saveq.copyFrom(o_q, N);
 
@@ -123,6 +125,7 @@ void lserk4::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
       stepdt = dt;
     }
 
+    SetOutputStep(false); 
     Step(solver, o_q, time, stepdt);
     time += stepdt;
     tstep++;
@@ -142,9 +145,9 @@ void lserk4::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dflo
     // update solution using Runge-Kutta
     updateKernel(N, _dt, rka[rk], rkb[rk],
                  o_rhsq, o_resq, o_q);
-
-    solver.postStage(o_q, o_rhsq, currentTime, _dt);
   }
+
+  solver.postStep(o_q, time, _dt); 
 }
 
 
@@ -187,48 +190,47 @@ void lserk4_pml::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, 
 }
 
 
-/**************************************************/
-/* SUBCELL version                                */
-/**************************************************/
+// /**************************************************/
+// /* SUBCELL version                                */
+// /**************************************************/
 
-lserk4_subcell::lserk4_subcell(dlong _Nelements,  dlong _NhaloElements,
-                      int _Np, int _Nfields, int _Nsubcell,
-                      platform_t& _platform, comm_t _comm):
-  lserk4(_Nelements, _NhaloElements, _Np, _Nfields, _platform, _comm),
-  Ns(_Nfields*_Nsubcell*_Nelements) {
+// lserk4_subcell::lserk4_subcell(dlong _Nelements,  dlong _NhaloElements,
+//                       int _Np, int _Nfields, int _Nsubcell,
+//                       platform_t& _platform, comm_t _comm):
+//   lserk4(_Nelements, _NhaloElements, _Np, _Nfields, _platform, _comm),
+//   Ns(_Nfields*_Nsubcell*_Nelements) {
 
-  if (Ns) {
-    memory<dfloat> sq(Ns,0.0);
-    o_sq = platform.malloc<dfloat>(sq);
+//   if (Ns) {
+//     memory<dfloat> sq(Ns,0.0);
+//     o_sq = platform.malloc<dfloat>(sq);
 
-    o_ressq = platform.malloc<dfloat>(Ns);
-    o_rhssq = platform.malloc<dfloat>(Ns);
-  }
-}
+//     o_ressq = platform.malloc<dfloat>(Ns);
+//     o_rhssq = platform.malloc<dfloat>(Ns);
+//   }
+// }
 
-void lserk4_subcell::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dfloat _dt) {
+// void lserk4_subcell::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dfloat _dt) {
 
-  // Low storage explicit Runge Kutta (5 stages, 4th order)
-  for(int rk=0;rk<Nrk;++rk){
+//   // Low storage explicit Runge Kutta (5 stages, 4th order)
+//   for(int rk=0;rk<Nrk;++rk){
 
-    dfloat currentTime = time + rkc[rk]*_dt;
+//     dfloat currentTime = time + rkc[rk]*_dt;
 
-    //evaluate ODE rhs = f(q,t)
-    solver.rhsf_subcell(o_q, o_sq, o_rhsq, o_rhssq, currentTime);
+//     //evaluate ODE rhs = f(q,t)
+//     solver.rhsf_subcell(o_q, o_sq, o_rhsq, o_rhssq, currentTime);
 
-    // update solution using Runge-Kutta
-    updateKernel(N, _dt, rka[rk], rkb[rk],
-                 o_rhsq, o_resq, o_q);
-    // if (Ns)
-    //   updateKernel(Ns, _dt, rka[rk], rkb[rk],
-    //                o_rhssq, o_ressq, o_sq);
+//     // update solution using Runge-Kutta
+//     updateKernel(N, _dt, rka[rk], rkb[rk],
+//                  o_rhsq, o_resq, o_q);
+//     // if (Ns)
+//     //   updateKernel(Ns, _dt, rka[rk], rkb[rk],
+//     //                o_rhssq, o_ressq, o_sq);
 
-    // solver.postStage(o_q, o_sq, currentTime, _dt);
-  }
+//     // solver.postStage(o_q, o_sq, currentTime, _dt);
+//   }
 
-  solver.postStep(o_q, time, _dt); 
-}
-
+//   solver.postStep(o_q, time, _dt); 
+// }
 
 
 

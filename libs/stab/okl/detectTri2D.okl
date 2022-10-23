@@ -462,9 +462,7 @@
 
 	  // assumes p_Nel*p_Nq <= 32
 	  if(n==0){
-	    // Select the element if any field creates trouble
-
-	    for(int fld=0; fld<p_dNfields; fld++){ 
+	     for(int fld=0; fld<p_dNfields; fld++){ 
 	    	// dfloat mincoeff = 100; 
 	      // use running max from highest mode
 	      dfloat runningMax = mymax(s_LogMod[es][fld][p_Nq-1], s_LogMod[es][fld][p_Nq-2]);
@@ -475,10 +473,6 @@
 					// accumulate in least squares fit
 					coeff += s_LSF[j-1]*runningMax;
 	      }
-
-
-	      // mincoeff = mymin(fabs(coeff), fabs(mincoeff)); 
-	     
 	      // 
 	      const dfloat sk =fabs(coeff); 				     
 	      // ElementList[e*p_dNfields + fld] = sk;	 
@@ -805,7 +799,6 @@
 
 
 @kernel void detectFindNeighTri2D(const dlong Nelements,
-																	// @restrict const int * EToE, 
 	                                @restrict const  dlong  *  vmapP,
 																	@restrict dlong *  ElementList){
 

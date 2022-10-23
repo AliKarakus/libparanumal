@@ -30,10 +30,9 @@ namespace libp {
 
 void stab_t::stabSetupSubcell(){
 
-
   settings.getSetting("SUBCELL NUMBER", N);
 
-  std::cout<<"Subcell Number per edge = "<<N<<std::endl; 
+  // std::cout<<"Subcell Number per edge = "<<N<<std::endl; 
 
   if(N<mesh.N){
      LIBP_FORCE_ABORT("Subcell number can not be less than N");

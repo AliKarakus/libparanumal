@@ -70,7 +70,8 @@ void stab_t::detectSetupPersson(){
   }
 
   // Copy Vandermonde and invert
-  invV.malloc(mesh.Np*mesh.Np); invV.copyFrom(V, mesh.Np*mesh.Np); // = V.clone(); 
+  invV.malloc(mesh.Np*mesh.Np); 
+  invV.copyFrom(V, mesh.Np*mesh.Np); // = V.clone(); 
   linAlg_t::matrixInverse(mesh.Np, invV); 
 
   // Cut-off Highest Modes

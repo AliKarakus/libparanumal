@@ -67,7 +67,7 @@ void stab_t::detectSetupKlockner(){
       break; 
   }
 
-  invVT.malloc(mesh.Np*mesh.Np); 
+  invVT.malloc(mesh.Np*mesh.Np, 0.0); 
   linAlg_t::matrixInverse(mesh.Np, invV); 
   linAlg_t::matrixTranspose(mesh.Np, mesh.Np, invV, mesh.Np, invVT, mesh.Np);
 
@@ -84,11 +84,11 @@ void stab_t::detectSetupKlockner(){
    props["defines/" "p_sNfields"]= sNfields;
    props["defines/" "p_Nq"]= mesh.N+1;
 
-   if(stabType==Stab::SUBCELL){
-     props["defines/" "s_DGDG_TYPE"] = 0; 
-     props["defines/" "s_FVFV_TYPE"] = 1; 
-     props["defines/" "s_DGFV_TYPE"] = 2; 
-  }
+  if(stabType==Stab::SUBCELL){
+     props["defines/" "s_DGDG_TYPE"] = int(0); 
+     props["defines/" "s_FVFV_TYPE"] = int(1); 
+     props["defines/" "s_DGFV_TYPE"] = int(2); 
+   }
 
 
  // set kernel name suffix
@@ -159,12 +159,9 @@ if(stabType==Stab::ARTDIFF){
                o_qd, 
                o_eList); 
 
-
   findNeighKernel(mesh.Nelements, 
-                 mesh.o_EToE, 
+                  mesh.o_vmapP, 
                  o_eList); 
-
-
 
 }else{
   // Detect elements for each fields i.e. 2

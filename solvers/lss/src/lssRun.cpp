@@ -62,19 +62,6 @@ void lss_t::Run(){
                            mesh.o_z,
                            o_phi,
                            o_q);
-
-   // Hold history of recontruction times
-    shiftIndex = 0;   historyIndex = 0; 
-   // Initialize reconstruction time points
-   reconstructTime[shiftIndex] = startTime; 
-
-   const dlong N = mesh.Nelements*mesh.Np*Nfields; 
-   // // std::cout<<shiftIndex<<" "<<o_q.size()<< " " <<mesh.Nelements*mesh.Np*Nfields*sizeof(dfloat)<<std::endl; 
-   // std::cout<<shiftIndex<<" "<<o_phiH.size()<< " " <<Nrecon*mesh.Nelements*mesh.Np*Nfields*sizeof(dfloat)<<std::endl; 
-
-   o_phiH.copyFrom(o_q, N, shiftIndex*N, 0);
-   shiftIndex = (shiftIndex+Nrecon-1)%Nrecon;
-
   }
 
 
@@ -89,17 +76,20 @@ void lss_t::Run(){
 
   stab.detectApply(o_q, o_q, 0.0); 
 
+  postStep(o_q, startTime, 0);
+
+
   timeStepper.Run(*this, o_q, startTime, finalTime);
  
-  // // output norm of final solution
-  // {
-  //   //compute q.M*q
-  //   mesh.MassMatrixApply(o_q, o_Mq);
+  // output norm of final solution
+  {
+    //compute q.M*q
+    mesh.MassMatrixApply(o_phi, o_Mq);
 
-  //   dlong Nentries = mesh.Nelements*mesh.Np;
-  //   dfloat norm2 = sqrt(platform.linAlg().innerProd(Nentries, o_q, o_Mq, mesh.comm));
+    dlong Nentries = mesh.Nelements*mesh.Np;
+    dfloat norm2 = sqrt(platform.linAlg().innerProd(Nentries, o_phi, o_Mq, mesh.comm));
 
-  //   if(mesh.rank==0)
-  //     printf("Solution norm = %17.15lg\n", norm2);
-  // }
+    if(mesh.rank==0)
+      printf("Solution norm = %17.15lg\n", norm2);
+  }
 }

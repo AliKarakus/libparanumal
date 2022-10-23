@@ -36,8 +36,8 @@ void lss_t::rhsf(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const d
       RedistanceFilter(o_Q, o_RHS, T);
     }else if(stab.stabType==Stab::ARTDIFF){
       RedistanceArtdiff(o_Q, o_RHS, T);
-    // }else if(stab.stabType==Stab::SUBCELL){
-    //   RedistanceSubcell(o_Q, o_RHS, T);      
+    }else if(stab.stabType==Stab::SUBCELL){
+      RedistanceSubcell(o_Q, o_RHS, T);      
     }else{ // Default to no-stabilization
       Redistance(o_Q, o_RHS, T);
     }
@@ -45,48 +45,95 @@ void lss_t::rhsf(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const d
 
 }
 
+// //evaluate ODE rhs = f(q,t)
+
+// void lss_t::reconstruct(deviceMemory<dfloat>& o_Q, const dfloat T){
+  
+//   bool outstep = timeStepper.isOutputStep(); 
+
+//     if(outstep==false){
+//       // Hold history of recontruction times
+//       static int shiftIndex   = 0; 
+//       static int historyIndex = 0; 
+//       const dlong N = mesh.Nelements*mesh.Np*Nfields; 
+
+//       reconstructTime[shiftIndex] = T; 
+//       o_reconstructTime.copyFrom(reconstructTime); 
+
+//       o_phiH.copyFrom(o_Q, N, shiftIndex*N, 0); 
+
+//       if(historyIndex < (Nrecon/2) ){
+//         std::cout<<"creating initial history: index: "<<historyIndex<<" at time "<<T<<std::endl;
+//         // Create Initial History
+//         timeInitialHistoryKernel(mesh.Nelements, 
+//                                  shiftIndex, 
+//                                  N, 
+//                                  o_phiH);
+//       }
+
+//       if(historyIndex>=(Nrecon/2)){
+//         timeReconstructKernel(mesh.Nelements, 
+//                             shiftIndex, 
+//                             N, 
+//                             o_reconstructTime,
+//                             o_phiH,
+//                             o_phi);
+//       }
+
+//       // update indices
+//       historyIndex +=1; 
+//       shiftIndex= (shiftIndex+Nrecon-1)%Nrecon;
+//   }
+
+// }
+
+
 //evaluate ODE rhs = f(q,t)
 
-void lss_t::postStep(deviceMemory<dfloat>& o_Q, const dfloat time, const dfloat dt){
+void lss_t::postStep(deviceMemory<dfloat>& o_Q, const dfloat T, const dfloat dt){
+  
+  bool outstep = timeStepper.isOutputStep(); 
 
+    if(outstep==false){
+      // Hold history of recontruction times
+      static int shiftIndex   = 0; 
+      static int historyIndex = 0; 
+      const dlong N = mesh.Nelements*mesh.Np*Nfields; 
 
-if(redistance){
-  // if(timeStepper.outputStep==0){
-   historyIndex +=1; 
+      // const dfloat dt = timeStepper.GetTimeStep();
 
-  // const dfloat dt = timeStepper->GetTimeStep(); 
-  reconstructTime[shiftIndex] = time + dt; 
-  o_reconstructTime.copyFrom(reconstructTime); 
+      reconstructTime[shiftIndex] = T + dt; 
+      o_reconstructTime.copyFrom(reconstructTime); 
 
-  const dlong N = mesh.Nelements*mesh.Np*Nfields; 
-  o_phiH.copyFrom(o_Q, N, shiftIndex*N,0); 
+      o_phiH.copyFrom(o_Q, N, shiftIndex*N, 0); 
 
-   if(historyIndex==(Nrecon/2)){
-    std::cout<<"history index: "<<historyIndex<<" "<<time<<" "<<dt<<" "<< Nrecon<<std::endl;
-    // Create Initial History
-    timeInitialHistoryKernel(mesh.Nelements, 
-                             shiftIndex, 
-                             N, 
-                             o_phiH);
-   }
+      if(historyIndex < (Nrecon/2) ){
+        std::cout<<"creating initial history: index: "<<historyIndex<<" at time "<<T<<std::endl;
+        // Create Initial History
+        timeInitialHistoryKernel(mesh.Nelements, 
+                                 shiftIndex, 
+                                 N, 
+                                 o_phiH);
+      }
 
-  if(historyIndex>=(Nrecon/2))
-  timeReconstructKernel(mesh.Nelements, 
-                        shiftIndex, 
-                        N, 
-                        o_reconstructTime,
-                        o_phiH,
-                        o_phi);
+      if(historyIndex>=(Nrecon/2)){
+        timeReconstructKernel(mesh.Nelements, 
+                            shiftIndex, 
+                            N, 
+                            o_reconstructTime,
+                            o_phiH,
+                            o_phi);
+      }
 
-  shiftIndex = (shiftIndex+Nrecon-1)%Nrecon;
+      // update indices
+      historyIndex +=1; 
+      shiftIndex= (shiftIndex+Nrecon-1)%Nrecon;
 
-  // if(stab.stabType==Stab::SUBCELL){
-  //   stab.detectApply(o_Q, o_Q, time); 
-  // }
+      // stab.detectApply(o_Q, o_Q, T); 
+  }
+
 }
 
-
-}
 
 void lss_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_sQ, const dfloat T, const dfloat DT){
 
@@ -252,9 +299,12 @@ void lss_t::Redistance(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
 // This form uses strong forms
 void lss_t::RedistanceFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
  
- // if(stab.stabType==Stab::FILTER){
-  // Detect
-  stab.detectApply(o_Q, o_RHS, T); 
+// // Recontruct phi from the history
+// reconstruct(o_Q, T); 
+
+// Detect troubled elements
+stab.detectApply(o_Q, o_RHS, T); 
+
   // Filter
   filterKernel(mesh.Nelements, 
                stab.o_eList, 
@@ -294,7 +344,13 @@ void lss_t::RedistanceFilter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_
 // This solver uses strong from
 void lss_t::RedistanceArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
   
+
+  // // Recontruct phi from the history
+  // reconstruct(o_Q, T); 
+
+  // Detect troubled elements
   stab.detectApply(o_Q, o_RHS, T); 
+
 
   const dfloat alpha = 3.0; 
   stab.computeViscosityKernel(mesh.Nelements, 
@@ -391,26 +447,103 @@ void lss_t::RedistanceArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o
 
 
 
+void lss_t::RedistanceSubcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
+
+// Detect troubled elements
+stab.detectApply(o_Q, o_RHS, T); 
+
+// extract q halo on DEVICE
+  qTraceHalo.ExchangeStart(o_Q, 1);
+
+ redistanceVolumeKernel(mesh.Nelements,
+                       T,
+                       stab.o_eList, 
+                       mesh.o_vgeo,
+                       mesh.o_DW,
+                       o_Q,
+                       o_gradq);
+
+  qTraceHalo.ExchangeFinish(o_Q, 1);
+
+  // Get cell averages from nodal solution
+  projectDGKernel((mesh.Nelements + mesh.totalHaloPairs),
+                   stab.o_eList, 
+                   mesh.o_vmapM,
+                   stab.o_mFToE,
+                   stab.o_mFToF,
+                   stab.o_PFM,
+                   o_Q,
+                   o_sface);
+
+  redistanceSurfaceKernel(mesh.Nelements,
+                          stab.o_eList, 
+                          mesh.o_sgeo,
+                          mesh.o_LIFT,
+                          mesh.o_vmapM,
+                          mesh.o_vmapP,
+                          mesh.o_EToB,
+                          T,
+                          mesh.o_x,
+                          mesh.o_y,
+                          mesh.o_z,
+                          o_Q,
+                          o_gradq,
+                          o_RHS);
+
+    // Get cell averages from nodal solution
+    projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
+                  stab.o_eList, 
+                  stab.o_PM,
+                  o_Q,
+                  o_sq);
+
+
+     // Reconstruct face values for all subcells 
+     reconstructFaceKernel(mesh.Nelements, 
+                          stab.o_eList,
+                          stab.o_vgeo,
+                          stab.o_sgeo, 
+                          stab.o_emapP,
+                          stab.o_fmapP, 
+                          o_Q, 
+                          o_sq,
+                          o_sface);  
+
+
+       // FV compute 
+     subcellComputeKernel(mesh.Nelements, 
+                              stab.o_eList,
+                              stab.o_emapP,
+                              stab.o_fmapP, 
+                              stab.o_RM,
+                              stab.o_vgeo,
+                              stab.o_sgeo, 
+                              o_Q,
+                              o_sface, 
+                              o_srhs);  
+
+
+ reconstructDGKernel(mesh.Nelements, 
+                     stab.o_eList,
+                     stab.o_RM,
+                     o_srhs, 
+                     o_RHS);
+
+
+ // const dlong N = mesh.Nelements*stab.Nsubcells*Nfields; 
+ // platform.linAlg().set(N, 0.0, o_sq); 
+ // platform.linAlg().set(N, 0.0, o_srhs); 
+ // platform.linAlg().set(N*mesh.Nfaces, 0.0, o_sface); 
+
+}
+
+
+
 void lss_t::rhsf_subcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_sQ,
                              deviceMemory<dfloat>& o_RHS, deviceMemory<dfloat>& o_sRHS, const dfloat T){
 
-// projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
-//                   stab.o_eList, 
-//                   stab.o_PM,
-//                   o_Q,
-//                   o_sQ);
-
-
-
-// reconstructDGKernel(mesh.Nelements, 
-//                      stab.o_eList,
-//                      stab.o_RM,
-//                      o_sQ, 
-//                      o_Q);
-
- if(stab.stabType==Stab::SUBCELL){
-    stab.detectApply(o_Q, o_Q, T); 
-  }
+  // Detect troubled elements
+  stab.detectApply(o_Q, o_RHS, T); 
 
   // extract q halo on DEVICE
   qTraceHalo.ExchangeStart(o_Q, 1);
@@ -470,27 +603,26 @@ void lss_t::rhsf_subcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_sQ,
                           o_sface);  
 
 
-       // FV compute 
-     subcellComputeKernel(mesh.Nelements, 
-                              stab.o_eList,
-                              stab.o_emapP,
-                              stab.o_fmapP, 
-                              stab.o_RM,
-                              stab.o_vgeo,
-                              stab.o_sgeo, 
-                              o_Q,
-                              o_sface, 
-                              o_sRHS);  
+     // FV compute 
+    subcellComputeKernel(mesh.Nelements, 
+                            stab.o_eList,
+                            stab.o_emapP,
+                            stab.o_fmapP, 
+                            stab.o_RM,
+                            stab.o_vgeo,
+                            stab.o_sgeo, 
+                            o_Q,
+                            o_sface, 
+                            o_sRHS);  
 
 
-if(stab.stabType==Stab::SUBCELL){
- reconstructDGKernel(mesh.Nelements, 
-                     stab.o_eList,
-                     stab.o_RM,
-                     o_sRHS, 
-                     o_RHS);
-}
+     reconstructDGKernel(mesh.Nelements, 
+                         stab.o_eList,
+                         stab.o_RM,
+                         o_sRHS, 
+                         o_RHS);
 
 
 
 }
+

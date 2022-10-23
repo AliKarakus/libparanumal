@@ -51,6 +51,16 @@ dfloat timeStepper_t::GetGamma() {
   return ts->GetGamma();
 }
 
+void timeStepper_t::SetOutputStep(bool outstep_) {
+  assertInitialized();
+  ts->SetOutputStep(outstep_);
+}
+
+bool timeStepper_t::isOutputStep() {
+  assertInitialized();
+  return ts->outputStep;
+}
+
 void timeStepper_t::assertInitialized() {
   LIBP_ABORT("timeStepper_t not initialized",
              ts==nullptr);
