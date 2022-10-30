@@ -31,8 +31,12 @@ namespace libp {
 void stab_t::detectSetupKlockner(){
 
   // Initialize Required Memeory
-  eList.malloc(mesh.Nelements*dNfields); 
+  eList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_eList = platform.malloc<dlong>(eList); 
+
+  // Initialize Required Memeory
+  efList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
+  o_efList = platform.malloc<dfloat>(efList); 
 
   qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
   o_qd = platform.malloc<dfloat>(qd); 
@@ -43,7 +47,6 @@ void stab_t::detectSetupKlockner(){
     viscRamp.malloc(mesh.Nelements*dNfields, 0.0); 
     o_viscRamp = platform.malloc<dfloat>(viscRamp); 
   }
-
 
   memory<dfloat> invV, invVT;
   // Compute 2D to 1D mode map 
@@ -123,6 +126,9 @@ void stab_t::detectSetupKlockner(){
   fileName        = oklFilePrefix + "utilities" + oklFileSuffix; 
   kernelName      = "copyFloat";
   copyFloatKernel = platform.buildKernel(fileName, kernelName, props);  
+
+  kernelName      = "copyInt";
+  copyIntKernel = platform.buildKernel(fileName, kernelName, props); 
 }
 
 
@@ -147,7 +153,25 @@ if(stabType==Stab::ARTDIFF){
                o_qd, 
                o_viscRamp, 
                o_eList); 
+  
   }else if(stabType==Stab::SUBCELL){
+  // // Detect elements for each fields i.e. 2
+  // detectKernel(mesh.Nelements, 
+  //              mesh.o_vgeo, 
+  //              o_modeMap, 
+  //              mesh.o_MM, 
+  //              o_invV, 
+  //              o_LSF, 
+  //              o_BLD, 
+  //              o_qd, 
+  //              o_eList); 
+
+  // findNeighKernel(mesh.Nelements, 
+  //                 mesh.o_vmapP, 
+  //                o_eList); 
+
+
+
   // Detect elements for each fields i.e. 2
   detectKernel(mesh.Nelements, 
                mesh.o_vgeo, 
@@ -157,11 +181,21 @@ if(stabType==Stab::ARTDIFF){
                o_LSF, 
                o_BLD, 
                o_qd, 
-               o_eList); 
+               o_efList); 
+
+
+  mesh.halo.Exchange(o_efList, dNfields); 
+
 
   findNeighKernel(mesh.Nelements, 
                   mesh.o_vmapP, 
-                 o_eList); 
+                  o_efList); 
+
+ 
+
+  copyIntKernel((mesh.Nelements+mesh.totalHaloPairs)*dNfields, 
+              o_efList, 
+              o_eList); 
 
 }else{
   // Detect elements for each fields i.e. 2
@@ -176,9 +210,13 @@ if(stabType==Stab::ARTDIFF){
                o_eList); 
 }
 
+
+// mesh.halo.Exchange(o_efList, dNfields); 
+
+
+
+
 }
-
-
 
 
 void stab_t::ModeInfoKlocknerTri2D(int _N, memory<int>& _modeMap){

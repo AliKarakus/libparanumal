@@ -61,6 +61,9 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
   /*setup trace halo exchange */
   qTraceHalo = mesh.HaloTraceSetup(Nfields); 
+
+  qHalo     = mesh.halo;
+  
   if(advection){
     vTraceHalo = mesh.HaloTraceSetup(mesh.dim); //velocity field
   }
@@ -79,15 +82,9 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
                                         mesh.totalHaloPairs,
                                         mesh.Np, Nfields, platform, comm);
   } else if (settings.compareSetting("TIME INTEGRATOR","LSERK4")){
-    //  if(stab.stabType==Stab::SUBCELL){
-    // timeStepper.Setup<TimeStepper::lserk4_subcell>(mesh.Nelements,
-    //                                        mesh.totalHaloPairs,
-    //                                        mesh.Np, Nfields, stab.Nsubcells, platform, comm);
-    // }else{
     timeStepper.Setup<TimeStepper::lserk4>(mesh.Nelements,
                                            mesh.totalHaloPairs,
                                            mesh.Np, Nfields, platform, comm);
-    // }
   } else if (settings.compareSetting("TIME INTEGRATOR","DOPRI5")){
     timeStepper.Setup<TimeStepper::dopri5>(mesh.Nelements,
                                            mesh.totalHaloPairs,
@@ -109,10 +106,16 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     srhs.malloc(mesh.Nelements*stab.Nsubcells*Nfields); 
     o_srhs = platform.malloc<dfloat>(srhs); 
 
-    sq.malloc(mesh.Nelements*stab.Nsubcells*Nfields); 
+    // sq.malloc((mesh.Nelements+mesh.NhaloElements)*stab.Nsubcells*Nfields); 
+    // o_sq = platform.malloc<dfloat>(sq); 
+
+    // sface.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*stab.Nfaces*Nfields);
+    // o_sface = platform.malloc<dfloat>(sface); 
+
+    sq.malloc((mesh.Nelements+mesh.totalHaloPairs)*stab.Nsubcells*Nfields); 
     o_sq = platform.malloc<dfloat>(sq); 
 
-    sface.malloc((mesh.Nelements + mesh.NhaloElements)*stab.Nsubcells*stab.Nfaces*Nfields);
+    sface.malloc((mesh.Nelements + mesh.totalHaloPairs)*stab.Nsubcells*stab.Nfaces*Nfields);
     o_sface = platform.malloc<dfloat>(sface); 
 
     // this saves the history for qP, and qM for recontruction
@@ -136,6 +139,7 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
                   ogs::Signed, ogs::Auto, unique, verbose, platform); 
 
     weight.malloc(Nlocal, 1.0);
+    
 
     lssogs.GatherScatter(weight, 1, ogs::Add, ogs::Sym); 
     
@@ -354,6 +358,13 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
      kernelName      = "lssProjectDG" + suffix; 
      projectDGKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
 
+     kernelName      = "lssPartialProjectFV" + suffix; 
+     partialProjectFVKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+     kernelName      = "lssPartialProjectDG" + suffix; 
+     partialProjectDGKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
+
+
      kernelName            = "lssReconstructFace" + suffix; 
      reconstructFaceKernel =  platform.buildKernel(fileName, kernelName, kernelInfo); 
 
@@ -372,22 +383,10 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
 
     }
 
-
-
-
-
-
     
     fileName   = oklFilePrefix + "lssRedistanceUtilites" + oklFileSuffix;
     kernelName = "lssRedistanceSetFields";
     redistanceSetFieldsKernel = platform.buildKernel(fileName, kernelName, kernelInfo); 
-
-
-
-
-
-
-
 
 
     if(settings.compareSetting("TIME RECONSTRUCTION", "ENO2")){ 
@@ -407,12 +406,6 @@ void lss_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t _stab,
     timeInitialHistoryKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
     }
   }
-
-
-  
-
-
-
 
   // kernels from initialization files
   if (mesh.dim==2) {

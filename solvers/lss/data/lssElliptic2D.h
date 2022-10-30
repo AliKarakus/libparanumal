@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017-2022 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,35 +24,32 @@ SOFTWARE.
 
 */
 
-#include "stab.hpp"
-
-namespace libp {
-
-void stab_t::stabSetupSubcell(){
-
-  settings.getSetting("SUBCELL NUMBER", N);
-
-  if(N<mesh.N){
-     LIBP_FORCE_ABORT("Subcell number can not be less than N");
-   }
-
-   switch (mesh.elementType) {
-      case Mesh::TRIANGLES:
-        stabSetupSubcellTri2D();
-        break;
-      case Mesh::QUADRILATERALS:
-        // stabSetupSubcellQuad2D();
-         // LIBP_FORCE_ABORT("Limiter is not implemented yet");
-        break;
-      case Mesh::TETRAHEDRA:
-        // stabSetupSubcellTet3D();
-        break;
-      case Mesh::HEXAHEDRA:
-        // stabSetupSubcellHex3D();
-        // LIBP_FORCE_ABORT("FV-Subcell is not implemented yet");
-        break;
-    } 
-    
+// Level-Set function Rotated Square
+#define lssInitialConditions2D(t, x, y, q) \
+{                                       \
+  const dfloat xc = 0.875f;           \
+  const dfloat yc = 0.5f;         \
+  const dfloat A  = 1.0f;          \
+  const dfloat B  = 0.5f;          \
+  const dfloat scale = pow( (x-xc)*(x-xc) + (y-yc)*(y-yc) + 0.1, 1.0); \
+  (*q) = scale*(sqrt(x*x/(A*A) + y*y/(B*B)) - 1.0) ; \
 }
 
-} //namespace libp
+  // const dfloat yc = 2.0f/4.0f;         \
+
+// LS Advective field
+#define lssAdvectionField2D(t, x, y, q, u, v) \
+{                                       \
+}
+
+
+// Boundary conditions
+/* wall 1, outflow 2 */
+#define lssDirichletConditions2D(bc, t, x, y, nx, ny, qM, qB) \
+{                                       \
+  if(bc==1){                            \
+    *(qB) = qM;                        \
+  } else if(bc==2){                     \
+    *(qB) = qM;                         \
+  }                                     \
+}

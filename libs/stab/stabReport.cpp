@@ -43,18 +43,13 @@ void stab_t::Report(dfloat time, int tstep){
 	
 	  // copy data back to host
   	o_eList.copyTo(eList);
-    if(viscRamp.length()!=0){
-      o_viscRamp.copyTo(viscRamp);
-    }
+    
+    if(viscRamp.length()!=0){ o_viscRamp.copyTo(viscRamp);}
   	PlotElements(eList, std::string(fname));
 
     sprintf(fname, "stab_%04d_%04d.vtu", mesh.rank, frame);
-    if(visc.length()!=0){
-      o_visc.copyTo(visc);
-    }    
-    if(qd.length()!=0){
-      o_qd.copyTo(qd);
-    }    
+    if(visc.length()!=0){ o_visc.copyTo(visc); }
+    if(qd.length()!=0){ o_qd.copyTo(qd);}    
     
     PlotFields(qd, fname);
     frame++; 

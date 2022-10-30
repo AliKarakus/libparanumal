@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+
 // Project to FV 
 @kernel void lssProjectFVTri2D(const dlong Nelements,
                                 @restrict const dlong *elmList, 
@@ -69,6 +70,318 @@ for(int fld =0; fld < p_Nfields; fld++){
 }
 
 
+//  AK : Need to test this version of projection more !!!!!
+@kernel void lssProjectDGTri2D(const dlong Nelements,
+                                 @restrict const dlong * elmList, 
+                                 @restrict const int * faceNodes, 
+                                 @restrict const int *mFToE, 
+                                 @restrict const int *mFToF, 
+                                 @restrict const dfloat *  PFMT,                            
+                                 @restrict const dfloat *  Q,
+                                 @restrict dfloat *sface){
+  for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+    @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
+    @exclusive int elmType; 
+
+    #pragma unroll p_Nfields
+    for(int fld =0; fld < p_Nfields; fld++){
+
+        for(int es=0;es<s_NblocksS;++es;@inner(1)){
+          for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+            const dlong e = eo+es; 
+            if(e<Nelements){
+              elmType = elmList[e*p_dNfields + fld]; 
+              if(n<p_NfacesNfp && elmType==s_DGFV_TYPE){
+                const dlong id0 = e*p_Np*p_Nfields + faceNodes[n]; 
+                s_q[es][n] = Q[id0 + fld*p_Np]; 
+              }
+            }
+          }
+        }
+
+
+    for(int es=0;es<s_NblocksS;++es;@inner(1)){
+      for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+        const dlong e = eo+es;
+        if(e<Nelements){
+          if(n<s_NfacesNfp && elmType==s_DGFV_TYPE){
+            dfloat sqn = 0.f; 
+            const int idn  = n%s_N; 
+            const int face = n/s_N; 
+            for(int i=0; i<p_Nfp; i++){
+              const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
+              sqn += pfm*s_q[es][face*p_Nfp + i]; 
+            }
+            const int e0 = mFToE[n];  // get local subcell element number in this cell 
+            const int f0 = mFToF[n];
+
+            const dlong id = e*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
+
+            sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
+        }
+       }
+      }
+    }
+
+
+  }
+
+  }
+}
+
+
+// //  AK : Need to test this version of projection more !!!!!
+// @kernel void lssProjectDGTri2D(const dlong Nelements,
+//                                  @restrict const dlong * elmList, 
+//                                  // @restrict const dlong * vmapM, 
+//                                  @restrict const int * faceNodes, 
+//                                  @restrict const int *mFToE, 
+//                                  @restrict const int *mFToF, 
+//                                  @restrict const dfloat *  PFMT,                            
+//                                  @restrict const dfloat *  Q,
+//                                  @restrict dfloat *sface){
+//   for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+//     @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
+//     @exclusive int elmType; 
+
+//     #pragma unroll p_Nfields
+//     for(int fld =0; fld < p_Nfields; fld++){
+
+//         for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//           for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//             const dlong e = eo+es; 
+//             if(e<Nelements){
+//               elmType = elmList[e*p_dNfields + fld]; 
+//               if(n<p_NfacesNfp && elmType==s_DGFV_TYPE){
+//                 // const dlong vid = vmapM[e*p_NfacesNfp + n];
+//                 // const dlong vid = vmapM[e*p_NfacesNfp + n];
+//                 // const dlong id0 = e*p_Np*p_Nfields + vid%p_Np; 
+//                 const dlong id0 = e*p_Np*p_Nfields + faceNodes[n]; 
+//                 s_q[es][n] = Q[id0 + fld*p_Np]; 
+//               }
+//             }
+//           }
+//         }
+
+
+//     for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//       for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//         const dlong e = eo+es;
+//         if(e<Nelements){
+//           if(n<s_NfacesNfp && elmType==s_DGFV_TYPE){
+//             dfloat sqn = 0.f; 
+//             const int idn  = n%s_N; 
+//             const int face = n/s_N; 
+//             for(int i=0; i<p_Nfp; i++){
+//               const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
+//               sqn += pfm*s_q[es][face*p_Nfp + i]; 
+//             }
+//             const int e0 = mFToE[n];  // get local subcell element number in this cell 
+//             const int f0 = mFToF[n];
+
+//             const dlong id = e*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
+
+//             sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
+//         }
+//        }
+//       }
+//     }
+
+
+//   }
+
+//   }
+// }
+
+
+
+
+
+
+
+
+// //  AK : Need to test this version of projection more !!!!!
+// @kernel void lssProjectDGTri2D(const dlong Nelements,
+//                                  @restrict const dlong * elmList, 
+//                                  // @restrict const dlong * vmapM, 
+//                                  @restrict const int * faceNodes, 
+//                                  @restrict const int *mFToE, 
+//                                  @restrict const int *mFToF, 
+//                                  @restrict const dfloat *  PFMT,                            
+//                                  @restrict const dfloat *  Q,
+//                                  @restrict dfloat *sface){
+//   for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+//     @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
+//     @exclusive int elmType; 
+
+//     #pragma unroll p_Nfields
+//     for(int fld =0; fld < p_Nfields; fld++){
+
+//         for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//           for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//             const dlong e = eo+es; 
+//             if(e<Nelements){
+//               elmType = elmList[e*p_dNfields + fld]; 
+//               if(n<p_NfacesNfp){
+//                 // const dlong vid = vmapM[e*p_NfacesNfp + n];
+//                 // const dlong vid = vmapM[e*p_NfacesNfp + n];
+//                 // const dlong id0 = e*p_Np*p_Nfields + vid%p_Np; 
+//                 const dlong id0 = e*p_Np*p_Nfields + faceNodes[n]; 
+//                 s_q[es][n] = Q[id0 + fld*p_Np]; 
+//               }
+//             }
+//           }
+//         }
+
+
+//     for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//       for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//         const dlong e = eo+es;
+//         if(e<Nelements){
+//           if(n<s_NfacesNfp){
+//             dfloat sqn = 0.f; 
+//             const int idn  = n%s_N; 
+//             const int face = n/s_N; 
+//             for(int i=0; i<p_Nfp; i++){
+//               const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
+//               sqn += pfm*s_q[es][face*p_Nfp + i]; 
+//             }
+//             const int e0 = mFToE[n];  // get local subcell element number in this cell 
+//             const int f0 = mFToF[n];
+
+//             const dlong id = e*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
+
+//             sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
+//         }
+//        }
+//       }
+//     }
+
+
+//   }
+
+//   }
+// }
+
+
+// Project to FV 
+@kernel void lssPartialProjectFVTri2D(const dlong Nelements,
+                                      @restrict const  dlong *  elementList,
+                                      @restrict const  dlong *  troubledList, 
+                                      @restrict const dfloat *  PMT,                            
+                                      @restrict const dfloat *  Q,
+                                      @restrict dfloat *pQ){
+
+  for(dlong eo=0;eo<Nelements;eo+=s_NblocksV;@outer(0)){
+    @shared dfloat s_q[s_NblocksV][p_Np];
+    @exclusive int   etype; 
+    @exclusive dlong elm; 
+
+for(int fld =0; fld < p_Nfields; fld++){
+
+    for(int es=0;es<s_NblocksV;++es;@inner(1)){
+      for(int n=0;n<s_maxNodesV;++n;@inner(0)){
+        const dlong e = eo+es; 
+        if(e<Nelements){
+          elm   = elementList[e];
+          etype = troubledList[elm*p_dNfields + fld]; 
+
+          if(n<p_Np && etype==s_FVFV_TYPE){
+            s_q[es][n] = Q[elm*p_Np*p_Nfields +  fld*p_Np +n]; 
+          }
+        }
+      }
+    }
+
+    for(int es=0;es<s_NblocksV;++es;@inner(1)){
+      for(int n=0;n<s_maxNodesV;++n;@inner(0)){
+        const dlong e = eo+es;
+        if(n<s_Ncells && e<Nelements && etype==s_FVFV_TYPE){
+          dfloat sqn = 0; 
+          for(int i=0; i<p_Np; i++){
+            sqn += PMT[n + i*s_Ncells]*s_q[es][i]; 
+          }
+          const dlong id = elm*s_Ncells*p_Nfields + n;  
+          pQ[id + fld*s_Ncells] = sqn; 
+        }
+      }
+    }
+
+  }
+
+  }
+}
+
+
+
+
+
+// 
+@kernel void lssPartialProjectDGTri2D(const dlong Nelements,
+                                      @restrict const  dlong *  elementList,
+                                      @restrict const dlong *   troubledList, 
+                                     @restrict const dlong * vmapM, 
+                                     @restrict const int *mFToE, 
+                                     @restrict const int *mFToF, 
+                                     @restrict const dfloat *  PFMT,                            
+                                     @restrict const dfloat *  Q,
+                                     @restrict dfloat *sface){
+  for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+    @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
+    @exclusive int etype; 
+    @exclusive dlong elm; 
+
+    #pragma unroll p_Nfields
+    for(int fld =0; fld < p_Nfields; fld++){
+
+        for(int es=0;es<s_NblocksS;++es;@inner(1)){
+          for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+            const dlong e = eo+es; 
+            if(e<Nelements){
+              elm     = elementList[e]; 
+              etype   = troubledList[elm*p_dNfields + fld]; 
+
+              if(n<p_NfacesNfp && etype==s_DGFV_TYPE){
+                const dlong vid = vmapM[elm*p_NfacesNfp + n];
+                const dlong id0 = elm*p_Np*p_Nfields + vid%p_Np; 
+                s_q[es][n] = Q[id0 + fld*p_Np]; 
+              }
+            }
+          }
+        }
+
+
+    for(int es=0;es<s_NblocksS;++es;@inner(1)){
+      for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+        const dlong e = eo+es;
+        if(e<Nelements){
+          if(n<s_NfacesNfp && etype==s_DGFV_TYPE){
+            dfloat sqn = 0.f; 
+            const int idn  = n%s_N; 
+            const int face = n/s_N; 
+            for(int i=0; i<p_Nfp; i++){
+              const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
+              sqn += pfm*s_q[es][face*p_Nfp + i]; 
+            }
+            const int e0 = mFToE[n];  // get local subcell element number in this cell 
+            const int f0 = mFToF[n];
+
+            const dlong id = elm*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
+
+            sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
+        }
+       }
+      }
+    }
+
+
+  }
+
+  }
+}
+
+
+
 // Recontruct DG solution from FV data
 @kernel void lssReconstructDGTri2D(const dlong Nelements,
                                  @restrict const dlong *elmList,  
@@ -110,70 +423,6 @@ for(int fld =0; fld < p_Nfields; fld++){
     }
 
   }
-  }
-}
-
-
-
-
-
-//  AK : Need to test this version of projection more !!!!!
-@kernel void lssProjectDGTri2D(const dlong Nelements,
-                                 @restrict const dlong * elmList, 
-                                 @restrict const dlong * vmapM, 
-                                 @restrict const int *mFToE, 
-                                 @restrict const int *mFToF, 
-                                 @restrict const dfloat *  PFMT,                            
-                                 @restrict const dfloat *  Q,
-                                 @restrict dfloat *sface){
-  for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
-    @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
-    @exclusive int elmType; 
-
-    #pragma unroll p_Nfields
-    for(int fld =0; fld < p_Nfields; fld++){
-
-        for(int es=0;es<s_NblocksS;++es;@inner(1)){
-          for(int n=0;n<s_maxNodesS;++n;@inner(0)){
-            const dlong e = eo+es; 
-            if(e<Nelements){
-              elmType = elmList[e*p_dNfields + fld]; 
-              if(n<p_NfacesNfp && elmType==s_DGFV_TYPE){
-                const dlong vid = vmapM[e*p_NfacesNfp + n];
-                const dlong id0 = e*p_Np*p_Nfields + vid%p_Np; 
-                s_q[es][n] = Q[id0 + fld*p_Np]; 
-              }
-            }
-          }
-        }
-
-
-    for(int es=0;es<s_NblocksS;++es;@inner(1)){
-      for(int n=0;n<s_maxNodesS;++n;@inner(0)){
-        const dlong e = eo+es;
-        if(e<Nelements){
-          if(n<s_NfacesNfp && elmType==s_DGFV_TYPE){
-            dfloat sqn = 0.f; 
-            const int idn  = n%s_N; 
-            const int face = n/s_N; 
-            for(int i=0; i<p_Nfp; i++){
-              const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
-              sqn += pfm*s_q[es][face*p_Nfp + i]; 
-            }
-            const int e0 = mFToE[n];  // get local subcell element number in this cell 
-            const int f0 = mFToF[n];
-
-            const dlong id = e*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
-
-            sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
-        }
-       }
-      }
-    }
-
-
-  }
-
   }
 }
 
@@ -470,3 +719,408 @@ for(int fld=0; fld<p_Nfields; fld++){
   }
 
 }
+
+
+
+
+// // Recontruct DG solution from FV data
+// @kernel void lssReconstructDGTri2D(const dlong Nelements,
+//                                  @restrict const dlong *elmList,  
+//                                  @restrict const dfloat *  RMT,                            
+//                                  @restrict const dfloat *  pQ,
+//                                  @restrict dfloat *Q){
+
+//   for(dlong eo=0;eo<Nelements;eo+=s_NblocksV;@outer(0)){
+//     @shared dfloat s_pq[s_NblocksV][s_Ncells];
+//     @exclusive int elmType; 
+
+//     #pragma unroll p_Nfields
+//     for(int fld=0; fld<p_Nfields; fld++){
+
+//         for(int es=0;es<s_NblocksV;++es;@inner(1)){
+//           for(int n=0;n<s_maxNodesV;++n;@inner(0)){
+//             const dlong e = eo+es; 
+//             if(e<Nelements){
+//               elmType = elmList[e*p_dNfields + fld]; 
+//               if(n<s_Ncells && elmType==s_FVFV_TYPE){
+//                 s_pq[es][n] = pQ[e*s_Ncells*p_Nfields + n + fld*s_Ncells]; 
+//               }
+//             }
+//           }
+//         }
+
+
+//     for(int es=0;es<s_NblocksV;++es;@inner(1)){
+//       for(int n=0;n<s_maxNodesV;++n;@inner(0)){
+//         const dlong e = eo+es; 
+//         if(n<p_Np && e<Nelements && elmType==s_FVFV_TYPE){
+//           dfloat rq = 0; 
+//           for(int i=0; i<s_Ncells; i++){
+//             rq += RMT[n + i*p_Np]*s_pq[es][i]; 
+//           }
+//           Q[e*p_Np*p_Nfields + n + fld*p_Np] = rq; 
+//         }
+//       }
+//     }
+
+//   }
+//   }
+// }
+
+
+
+
+
+// //  AK : Need to test this version of projection more !!!!!
+// @kernel void lssProjectDGTri2D(const dlong Nelements,
+//                                  @restrict const dlong * elmList, 
+//                                  @restrict const dlong * vmapM, 
+//                                  @restrict const int *mFToE, 
+//                                  @restrict const int *mFToF, 
+//                                  @restrict const dfloat *  PFMT,                            
+//                                  @restrict const dfloat *  Q,
+//                                  @restrict dfloat *sface){
+//   for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+//     @shared dfloat s_q[s_NblocksS][p_NfacesNfp];
+//     @exclusive int elmType; 
+
+//     #pragma unroll p_Nfields
+//     for(int fld =0; fld < p_Nfields; fld++){
+
+//         for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//           for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//             const dlong e = eo+es; 
+//             if(e<Nelements){
+//               elmType = elmList[e*p_dNfields + fld]; 
+//               if(n<p_NfacesNfp && elmType==s_DGFV_TYPE){
+//                 const dlong vid = vmapM[e*p_NfacesNfp + n];
+//                 const dlong id0 = e*p_Np*p_Nfields + vid%p_Np; 
+//                 s_q[es][n] = Q[id0 + fld*p_Np]; 
+//               }
+//             }
+//           }
+//         }
+
+
+//     for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//       for(int n=0;n<s_maxNodesS;++n;@inner(0)){
+//         const dlong e = eo+es;
+//         if(e<Nelements){
+//           if(n<s_NfacesNfp && elmType==s_DGFV_TYPE){
+//             dfloat sqn = 0.f; 
+//             const int idn  = n%s_N; 
+//             const int face = n/s_N; 
+//             for(int i=0; i<p_Nfp; i++){
+//               const dfloat pfm = PFMT[idn + i*s_N]; // this operator defined on single face only: can expand it all faces
+//               sqn += pfm*s_q[es][face*p_Nfp + i]; 
+//             }
+//             const int e0 = mFToE[n];  // get local subcell element number in this cell 
+//             const int f0 = mFToF[n];
+
+//             const dlong id = e*s_Ncells*p_Nfaces*p_Nfields + e0*p_Nfaces + f0; 
+
+//             sface[id  + fld*p_Nfaces*s_Ncells] = sqn; 
+//         }
+//        }
+//       }
+//     }
+
+
+//   }
+
+//   }
+// }
+
+
+// // Compute HJ equation, assumes FV face values are already constructed
+// @kernel void lssSubcellComputeTri2D(const dlong Nelements,
+//                                     @restrict const dlong *elmList, 
+//                                     @restrict const dlong *emapP, 
+//                                     @restrict const dlong *fmapP,                                   
+//                                     @restrict const dfloat *  RMT,  
+//                                     @restrict const dfloat *  vgeo,                            
+//                                     @restrict const dfloat *  sgeo,                                         
+//                                     @restrict const dfloat *  q,
+//                                     @restrict const dfloat *  sface,
+//                                     @restrict dfloat *rhsq){
+
+//   for(dlong eo=0;eo<Nelements;eo+=s_NblocksV;@outer(0)){
+
+// for(int fld=0; fld<p_Nfields; fld++){
+
+//     for(int es=0;es<s_NblocksV;++es;@inner(1)){
+//       for(int s=0;s<s_Ncells;++s;@inner(0)){ 
+//         const dlong e = eo + es;
+//         if(e<Nelements){
+//           const dlong elmType = elmList[e*p_dNfields + fld]; 
+
+//           dfloat rhss = 0.f; 
+
+//           if(elmType==s_FVFV_TYPE){
+//             const dlong sem  =  e*s_Ncells + s; 
+
+//             const dlong vid   = sem*s_Nvgeo;  
+//             const dlong sid   = sem*p_Nfaces*s_Nsgeo; 
+//             const dfloat ivm  = vgeo[vid + s_IVID]; 
+
+//             dfloat p1 = 0.f, p2 = 0.f; 
+//             dfloat q1 = 0.f, q2 = 0.f;
+
+//             for(int fm=0; fm<p_Nfaces; fm++){
+//               const dlong  sep  = emapP[e*s_Ncells*p_Nfaces + s*p_Nfaces + fm];
+//               const int    fp   = fmapP[e*s_Ncells*p_Nfaces + s*p_Nfaces + fm];
+
+//               const dlong ep = sep/s_Ncells; 
+//               const int   sp = sep%s_Ncells; 
+              
+//               const dlong idm = e*s_Ncells*p_Nfaces*p_Nfields + s*p_Nfaces+fm; 
+//               const dlong idp = ep*s_Ncells*p_Nfaces*p_Nfields + sp*p_Nfaces+fp; 
+
+//               const dfloat qfm  = sface[idm + fld*p_Nfaces*s_Ncells]; 
+//               const dfloat qfp  = sface[idp + fld*p_Nfaces*s_Ncells]; 
+
+//               const dfloat nxm  = sgeo[sid + fm*s_Nsgeo + s_NXID];
+//               const dfloat nym  = sgeo[sid + fm*s_Nsgeo + s_NYID]; 
+//               const dfloat sam  = sgeo[sid + fm*s_Nsgeo + s_SAID];
+
+
+//               dfloat unx = 0.f, dnx = 1.f; 
+//               dfloat uny = 0.f, dny = 1.f; 
+
+//               if(nxm>=0){unx = 1.f; dnx = 0.f; };
+//               if(nym>=0){uny = 1.f; dny = 0.f; };
+
+//               p1 += ivm*sam*nxm*( dnx*qfm + unx*qfp);
+//               p2 += ivm*sam*nxm*( unx*qfm + dnx*qfp);
+
+//               q1 += ivm*sam*nym*( dny*qfm + uny*qfp);
+//               q2 += ivm*sam*nym*( uny*qfm + dny*qfp);
+//             }
+
+
+//           const dfloat p  = 0.5*(p1+p2);
+//           const dfloat q  = 0.5*(q1+q2);
+//           rhss = -(( sqrt(p*p+q*q)) - 0.5*(p1-p2) - 0.5*(q1-q2) );
+//         }
+
+//         rhsq[e*s_Ncells*p_Nfields + s + fld*s_Ncells] = rhss;  
+//         }
+//       }
+//     }
+//   }
+//   }
+// }
+
+
+
+
+// // Compute WENO2 reconstruction with Least Squares
+// void WENO2Coeff(const dfloat dx1,  const dfloat dy1, 
+//                 const dfloat dx2,  const dfloat dy2, 
+//                 const dfloat dx3,  const dfloat dy3, 
+//                 dfloat qm,   dfloat qp1, dfloat qp2,  dfloat qp3,
+//                 const int bc1, const int bc2, const int bc3, 
+//                 dfloat *a1, dfloat *a2, dfloat *a3){
+
+//   const dfloat eps = 1E-12; 
+//   // Create Stencil size of 3 i.e. [m p1 p2; m p2 p3; m p3 p1]
+//   dfloat det1 = 1.0 / (dx1*dy2 - dx2*dy1); 
+//   dfloat a12 = det1*( (dy1-dy2)*qm + ( dy2)*qp1 +(-dy1)*qp2); 
+//   dfloat a13 = det1*(-(dx1-dx2)*qm + (-dx2)*qp1 +( dx1)*qp2); 
+
+//   dfloat det2 = 1.0 / (dx2*dy3 - dx3*dy2); 
+//   dfloat a22 = det2*( (dy2-dy3)*qm + ( dy3)*qp2 +(-dy2)*qp3); 
+//   dfloat a23 = det2*(-(dx2-dx3)*qm + (-dx3)*qp2 +( dx2)*qp3); 
+
+//   dfloat det3 = 1.0 / (dx3*dy1 - dx1*dy3); 
+//   dfloat a32 = det3*( (dy3-dy1)*qm + ( dy1)*qp3 +(-dy3)*qp1); 
+//   dfloat a33 = det3*(-(dx3-dx1)*qm + (-dx1)*qp3 +( dx3)*qp1); 
+
+//   // AK: need to be muliplied with h^-1, formerly !!!!!
+//   dfloat l11 = sqrt(a12*a12 + a13*a13); // very ugly
+//   dfloat l12 = sqrt(a22*a22 + a23*a23); // very ugly
+//   dfloat l13 = sqrt(a32*a32 + a33*a33); // very ugly
+
+
+//   dfloat w1 = 1.0/ pow((eps + l11),4); // very ugly !!!
+//   dfloat w2 = 1.0/ pow((eps + l12),4); // very ugly !!!
+//   dfloat w3 = 1.0/ pow((eps + l13),4); // very ugly !!!
+
+//   // Nonlinear weights
+//   *a1 = qm; 
+//   *a2 = (w1*a12 + w2*a22 + w3*a32)/(w1+w2+w3); 
+//   *a3 = (w1*a13 + w2*a23 + w3*a33)/(w1+w2+w3); 
+
+// }
+
+// // Reconstruct FV face values once at all
+// @kernel void lssReconstructFaceTri2D(const dlong Nelements,
+//                                      @restrict const dlong * elmList, 
+//                                      @restrict const dfloat * vgeo,                            
+//                                      @restrict const dfloat * sgeo,                            
+//                                      @restrict const dlong *  emapP,                            
+//                                      @restrict const dlong *  fmapP,                            
+//                                      @restrict const dfloat *  q,
+//                                      @restrict const dfloat *  sq,
+//                                      @restrict dfloat *sface){
+
+// for(dlong eo=0;eo<Nelements;eo+=s_NblocksS;@outer(0)){
+
+// for(int fld=0; fld<p_Nfields; fld++){
+
+//     for(int es=0;es<s_NblocksS;++es;@inner(1)){
+//       for(int s=0;s<s_Ncells;++s;@inner(0)){ 
+//         const dlong e = eo + es;
+//         if(e<Nelements){
+//           const int elmType = elmList[e*p_dNfields + fld]; 
+          
+//           if(elmType==s_FVFV_TYPE){
+//             const dlong sem  =  e*s_Ncells + s; 
+//             const dlong vid  =  sem*s_Nvgeo;  
+//             const dlong sid  =  sem*p_Nfaces*s_Nsgeo; 
+
+//             //Local Infos
+//             const dfloat qm   = sq[e*s_Ncells*p_Nfields + s + fld*s_Ncells];              // solution
+//             const dfloat xcm  = vgeo[vid + s_CXID]; // center coordinates
+//             const dfloat ycm  = vgeo[vid + s_CYID];
+//             const dfloat ivl  = vgeo[vid + s_IVID];
+//             const dfloat invh = sqrt(ivl);
+
+//             // const dlong id    = (e*s_Ncells + sem)*p_Nfaces; 
+//             const dlong sep1  = emapP[sem*p_Nfaces + 0];
+//             const dlong sep2  = emapP[sem*p_Nfaces + 1];
+//             const dlong sep3  = emapP[sem*p_Nfaces + 2];
+
+//             const int bc1      = sgeo[sid + 0*s_Nsgeo + s_BCID]; 
+//             const int bc2      = sgeo[sid + 1*s_Nsgeo + s_BCID]; 
+//             const int bc3      = sgeo[sid + 2*s_Nsgeo + s_BCID];
+//             //
+//             const dlong ep1 = sep1/s_Ncells; 
+//             const dlong ep2 = sep2/s_Ncells; 
+//             const dlong ep3 = sep3/s_Ncells; 
+
+//             const dlong sp1 = sep1%s_Ncells; 
+//             const dlong sp2 = sep2%s_Ncells; 
+//             const dlong sp3 = sep3%s_Ncells; 
+
+//             const int etype1 = elmList[ep1*p_Nfields + fld]; 
+//             const int etype2 = elmList[ep2*p_Nfields + fld]; 
+//             const int etype3 = elmList[ep3*p_Nfields + fld]; 
+
+//             dfloat qp1  = 0,  qp2 =0,   qp3 = 0; 
+//             dfloat xcp1 = 0, xcp2 =0,   xcp3= 0; 
+//             dfloat ycp1 = 0, ycp2 =0,   ycp3= 0; 
+
+
+//             const dfloat xf1 =  sgeo[sid + 0*s_Nsgeo + s_FXID];
+//             const dfloat yf1 =  sgeo[sid + 0*s_Nsgeo + s_FYID];
+
+//             const dfloat xf2 =  sgeo[sid + 1*s_Nsgeo + s_FXID];
+//             const dfloat yf2 =  sgeo[sid + 1*s_Nsgeo + s_FYID];
+
+//             const dfloat xf3 =  sgeo[sid + 2*s_Nsgeo + s_FXID];
+//             const dfloat yf3 =  sgeo[sid + 2*s_Nsgeo + s_FYID];
+
+//             if(etype1==s_FVFV_TYPE){
+//               const dlong id1  = ep1*s_Ncells*p_Nfields + sp1; 
+//               qp1   = sq[id1 + fld*s_Ncells]; 
+//               xcp1  = vgeo[sep1*s_Nvgeo + s_CXID];  
+//               ycp1  = vgeo[sep1*s_Nvgeo + s_CYID]; 
+//             }else{ // DGFV Tpe : face value already constructed
+//               const int fp = fmapP[sem*p_Nfaces + 0];
+//               const dlong id1 = ep1*s_Ncells*p_Nfields*p_Nfaces + sp1*p_Nfaces + fp; 
+//               qp1  = sface[id1 + fld*p_Nfaces*s_Ncells];
+//               xcp1 =  xf1; ycp1 =  yf1;
+//             }
+
+//             if(etype2==s_FVFV_TYPE){
+//               const dlong id2  = ep2*s_Ncells*p_Nfields + sp2; 
+//               qp2   = sq[id2 + fld*s_Ncells]; 
+//               xcp2  = vgeo[sep2*s_Nvgeo + s_CXID];  
+//               ycp2  = vgeo[sep2*s_Nvgeo + s_CYID]; 
+//             }else{// DGFV Tpe : face value already constructed
+//               const int fp = fmapP[sem*p_Nfaces + 1]; 
+//               const dlong id2 = ep2*s_Ncells*p_Nfields*p_Nfaces + sp2*p_Nfaces + fp; 
+//               qp2  = sface[id2 + fld*p_Nfaces*s_Ncells];
+//               xcp2 =  xf2; ycp2 =  yf2;
+//             }
+
+//             if(etype3==s_FVFV_TYPE){
+//               const dlong id3  = ep3*s_Ncells*p_Nfields + sp3; 
+//               qp3   = sq[id3 + fld*s_Ncells]; 
+//               xcp3  = vgeo[sep3*s_Nvgeo + s_CXID];  
+//               ycp3  = vgeo[sep3*s_Nvgeo + s_CYID]; 
+//             }else{// DGFV Tpe : face value already constructed
+//               const int fp = fmapP[sem*p_Nfaces + 2];  
+//               const dlong id3 = ep3*s_Ncells*p_Nfields*p_Nfaces + sp3*p_Nfaces + fp; 
+//               qp3  = sface[id3 + fld*p_Nfaces*s_Ncells];
+//               xcp3 =  xf3; ycp3 =  yf3;
+//             }
+
+//             // Do nothing BC's: a little tricky for FV cells
+//             if(bc1>0){
+//               xcp1 =  sgeo[sid + 0*s_Nsgeo + s_FXID];
+//               ycp1 =  sgeo[sid + 0*s_Nsgeo + s_FYID];
+//               qp1 = qm; 
+//             }
+//             if(bc2>0){
+//               xcp2 =  sgeo[sid + 1*s_Nsgeo + s_FXID];
+//               ycp2 =  sgeo[sid + 1*s_Nsgeo + s_FYID];
+//               qp2  = qm; 
+//             }
+//             if(bc3>0){
+//               xcp3 =  sgeo[sid + 2*s_Nsgeo + s_FXID];
+//               ycp3 =  sgeo[sid + 2*s_Nsgeo + s_FYID];
+//               qp3 = qm;
+//             }
+
+//             const dfloat dx1 = (xcp1 - xcm); 
+//             const dfloat dy1 = (ycp1 - ycm); 
+
+//             const dfloat dx2 = (xcp2 - xcm); 
+//             const dfloat dy2 = (ycp2 - ycm); 
+
+//             const dfloat dx3 = (xcp3 - xcm); 
+//             const dfloat dy3 = (ycp3 - ycm); 
+
+//             dfloat a1, a2, a3; 
+//             WENO2Coeff(dx1,dy1, dx2,dy2, dx3,dy3, qm,qp1,qp2,qp3, 
+//                  bc1, bc2, bc3, &a1, &a2, &a3);
+
+//             // Do nothing BC's: a little tricky for FV cells
+//             if(bc1>0 || bc2>0 || bc3>0){
+//               // iterate to reconstruct face values at BC's
+//               for(int i=0; i<5; i++){
+//                 if(bc1>0){qp1 = a1 + a2*dx1 + a3*dy1;}
+//                 if(bc2>0){qp2 = a1 + a2*dx2 + a3*dy2;}
+//                 if(bc3>0){qp3 = a1 + a2*dx3 + a3*dy3;}
+//                // dfloat a1, a2, a3; 
+                
+//                 WENO2Coeff(dx1,dy1, dx2,dy2, dx3,dy3, qm,qp1,qp2,qp3, 
+//                      bc1, bc2, bc3, &a1, &a2, &a3);
+   
+//                 }
+//             }
+
+//             for(int f=0; f<p_Nfaces; f++){
+//               // modifed 2nd order WENO 
+//               const dfloat fxm = sgeo[sid + f*s_Nsgeo + s_FXID]; 
+//               const dfloat fym = sgeo[sid + f*s_Nsgeo + s_FYID];     
+
+//                 const dlong id  =  e*s_Ncells*p_Nfaces*p_Nfields + s*p_Nfaces + f; 
+
+//               sface[id + fld*p_Nfaces*s_Ncells] = a1 + a2*(fxm -xcm) + a3*(fym - ycm); 
+//               // sface[id + fld*p_Nfaces*s_Ncells] = a1; 
+
+//             }
+//           }
+//         }
+//       }
+//     }
+
+    
+//   }
+
+//   }
+
+// }

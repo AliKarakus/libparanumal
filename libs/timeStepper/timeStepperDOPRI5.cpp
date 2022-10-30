@@ -142,6 +142,8 @@ void dopri5::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
       dt = end-time;
     }
 
+
+    SetOutputStep(false); 
     Step(solver, o_q, time, dt);
 
     // compute Dopri estimator
@@ -169,6 +171,7 @@ void dopri5::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
         // if(!rank)
         //   printf("Taking output mini step: %g\n", dt);
 
+        SetOutputStep(true); 
         // time step to output
         Step(solver, o_q, time, dt);
 
@@ -200,7 +203,7 @@ void dopri5::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
       facold = std::max(err,errMax);
 
       // if (!rank)
-      //   printf("\r time = %g (%d), dt = %g accepted                      ", time, allStep,  dt);
+        // printf("\r time = %g (%d), dt = %g accepted                      ", time, allStep,  dt);
 
       tstep++;
     } else {
@@ -216,7 +219,7 @@ void dopri5::Run(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat start, dflo
   }
 
   // if (!rank)
-  //   printf("%d accepted steps and %d total steps\n", tstep, allStep);
+    printf("%d accepted steps and %d total steps\n", tstep, allStep);
 }
 
 void dopri5::Backup(deviceMemory<dfloat> &o_Q) {
@@ -268,6 +271,8 @@ void dopri5::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dflo
                    o_rkq,
                    o_rkerr);
   }
+
+  solver.postStep(o_q, time, _dt); 
 }
 
 dfloat dopri5::Estimater(deviceMemory<dfloat>& o_q){

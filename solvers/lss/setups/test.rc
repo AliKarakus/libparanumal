@@ -2,9 +2,9 @@
 2.0
 
 [DATA FILE]
-data/lssCircle2D.h
+#data/lssCircle2D.h
 #data/lssElliptic2D.h
-#data/lssSquare2D.h
+data/lssSquare2D.h
 #data/lssMultipleInterfaces2D.h
 
 #data/test2D.h
@@ -15,7 +15,8 @@ data/lssCircle2D.h
 #data/lssSBRotation.h
 
 [MESH FILE]
-../../meshes/lssTest1Tri2D.msh
+#../../meshes/test.msh
+../../meshes/lssTest3Tri2D.msh
 #../../meshes/lssTri.msh
 #../../meshes/lssQuad.msh
 #../../meshes/lssTet.msh
@@ -123,7 +124,7 @@ LSERK4
 0
 
 [FINAL TIME]
-1.5
+1.2
 
 [OUTPUT INTERVAL]
 0.1

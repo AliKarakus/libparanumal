@@ -304,8 +304,8 @@ o_ielist  = platform.malloc<int>(ielist);
 void stab_t::CellGlobalConnectTri2D(){
 
   const dlong Nelements = mesh.Nelements; 
-  emapP.malloc(Nsubcells*Nfaces*Nelements,0);
-  fmapP.malloc(Nsubcells*Nfaces*Nelements,0);
+  emapP.malloc(mesh.Nelements*Nsubcells*Nfaces,0);
+  fmapP.malloc(mesh.Nelements*Nsubcells*Nfaces,0);
 
   // first connect internal elements
   for(dlong e=0; e<Nelements; e++){
@@ -368,8 +368,8 @@ void stab_t::CellGlobalConnectTri2D(){
     }
   }
 
-  // mesh.halo.Exchange(xf, Nsubcells*Nfaces);
-  // mesh.halo.Exchange(yf, Nsubcells*Nfaces);
+  mesh.halo.Exchange(xf, Nsubcells*Nfaces);
+  mesh.halo.Exchange(yf, Nsubcells*Nfaces);
 
   for(dlong e=0; e<Nelements; e++){
     for(int f=0;f<Nfaces;++f){
@@ -423,11 +423,86 @@ void stab_t::CellGlobalConnectTri2D(){
     }
   }
 
-  mesh.halo.Exchange(emapP, Nsubcells*Nfaces);
-  mesh.halo.Exchange(fmapP, Nsubcells*Nfaces);
-
   o_emapP = platform.malloc<dlong>(emapP); 
   o_fmapP = platform.malloc<dlong>(fmapP); 
+  
+  // mesh.halo.Exchange(o_emapP, Nsubcells*Nfaces);
+  // mesh.halo.Exchange(o_fmapP, Nsubcells*Nfaces);
+
+//   if(mesh.rank==0){ 
+//   for(dlong e=0; e<Nelements; e++){
+//     for(int f=0;f<Nfaces;++f){
+//       printf("%d  ", mesh.EToE[e*mesh.Nfaces + f]);
+//       }
+//       printf("\n");
+//     }
+//   }
+
+ // printf("\n");
+ //  printf("\n");
+ // if(mesh.rank==1){ 
+ //  for(dlong e=0; e<Nelements; e++){
+ //    for(int f=0;f<Nfaces;++f){
+ //      printf("%d  ", mesh.EToE[e*mesh.Nfaces + f]);
+ //      }
+ //      printf("\n");
+ //    }
+ //  }
+
+
+ //  printf("\n");
+ //  printf("\n");
+ // if(mesh.rank==1){ 
+ //  for(dlong e=0; e<Nelements; e++){
+ //    for(int s=0; s<Nsubcells; s++){
+ //        for(int f=0;f<Nfaces;++f){
+ //      printf("%d  ", emapP[e*Nsubcells*mesh.Nfaces + s*mesh.Nfaces + f]);
+ //      }
+ //      printf("\n");
+ //    }
+ //    printf("\n");
+ //  }
+ //  }
+
+
+  // if(mesh.rank==0){ 
+  // for(dlong e=0; e<Nelements; e++){
+  //   for(int f=0;f<Nfaces;++f){
+  //     printf("%d  ", mesh.EToV[e*mesh.Nverts + f]);
+  //     }
+  //     printf("\n");
+  //   }
+  // }
+
+
+// printf("\n");
+//   printf("\n");
+
+  // if(mesh.rank==0){ 
+  // for(dlong e=0; e<Nelements; e++){
+  //   for(int f=0;f<Nfaces;++f){
+  //      const dlong id = e*mesh.Nfaces*mesh.Nfp + f*mesh.Nfp + 0; 
+  //       const dlong vid = mesh.vmapP[id]; 
+  //       const dlong ep  = vid/mesh.Np;     
+  //     printf("%d  ", ep);
+  //     }
+  //     printf("\n");
+  //   }
+  // }
+
+//  printf("\n");
+//   printf("\n");
+//  if(mesh.rank==1){ 
+//   for(dlong e=0; e<Nelements; e++){
+//     for(int f=0;f<Nfaces;++f){
+//        const dlong id = e*mesh.Nfaces*mesh.Nfp + f*mesh.Nfp + 0; 
+//         const dlong vid = mesh.vmapP[id]; 
+//         const dlong ep  = vid/mesh.Np;     
+//       printf("%d  ", ep);
+//       }
+//       printf("\n");
+//     }
+//   }
 
 }
 
@@ -806,6 +881,18 @@ o_RFM = platform.malloc<dfloat>(RFMT);
 
 
 void stab_t::CellCreateMinorGridTri2D(){
+
+
+  mFaceNodes.malloc(mesh.Nfaces*mesh.Nfp,0); 
+  mFaceNodes.copyFrom(mesh.faceNodes); 
+  o_mFaceNodes = platform.malloc<int>(mFaceNodes); 
+
+  // for(int f=0 ; f<mesh.Nfaces; f++){
+  //   for(int n =0; n<mesh.Nfp; n++){
+  //     printf(" %d", mFaceNodes[f*mesh.Nfp + n]); 
+  //   }
+  //   printf("\n");
+  // }
 
   // Using triangle does not have to be!!!!
   Nverts = mesh.Nverts; // Subcell could be in different topology but not now

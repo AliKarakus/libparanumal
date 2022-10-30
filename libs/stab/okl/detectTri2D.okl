@@ -278,7 +278,7 @@
 				    @restrict const dfloat * LSF,
 				    @restrict const dfloat * BLD,
 				    @restrict const dfloat * Q, 
-				    @restrict dlong *  ElementList){
+				    @restrict dfloat *  ElementList){
 #define p_Nel 1
 #if BLDEC==1
 #define reduce02(s_L2, NT)				\
@@ -476,7 +476,8 @@
 	      // 
 	      const dfloat sk =fabs(coeff); 				     
 	      // ElementList[e*p_dNfields + fld] = sk;	 
-	      ElementList[e*p_dNfields + fld] = sk < 3.0 ? 1 : 0;	 
+	      // ElementList[e*p_dNfields + fld] = sk < 3.0 ? 1 : 0;	 
+	      ElementList[e*p_dNfields + fld] = sk < 3.0 ? 1.0 : 0.0;	 
 
 	    }
 	  }
@@ -488,6 +489,224 @@
 }
 
 
+
+// // 
+// @kernel void detectKlocknerTri2D(const dlong Nelements,
+// 				    @restrict const dfloat* vgeo,
+// 				    @restrict const int *  ModMap,
+// 				    @restrict const dfloat * MM,               
+// 				    @restrict const dfloat * InvVT,
+// 				    @restrict const dfloat * LSF,
+// 				    @restrict const dfloat * BLD,
+// 				    @restrict const dfloat * Q, 
+// 				    @restrict dlong *  ElementList){
+// #define p_Nel 1
+// #if BLDEC==1
+// #define reduce02(s_L2, NT)				\
+//    if(NT<p_Nq){						\
+//     for(int es=0;es<p_Nel;++es;@inner(1)){		\
+//       for(int n=0; n<p_Nq; n++; @inner(0)){		\
+// 	if(n<NT && n+NT<p_Nq){				\
+// 	  for(int fld=0; fld<p_dNfields; fld++){	\
+// 	    s_L2[es][fld][n]  += s_L2[es][fld][n+NT];	\
+// 	  }						\
+// 	}						\
+//       }							\
+//     }							\
+//   }
+// #endif
+
+
+//   for(dlong eo=0;eo<Nelements;eo+=p_Nel;@outer(0)){
+
+//     @shared dfloat s_Q[p_Nel][p_dNfields][p_Np];
+//     @shared dfloat s_Qhat2[p_Nel][p_dNfields][p_Np];
+//     @shared dfloat s_LogMod[p_Nel][p_dNfields][p_Nq];
+
+// #if BLDEC==1
+//     @shared dfloat s_L2[p_Nel][p_dNfields][p_Nq]; 
+// #endif
+//     @shared int s_ModMap[p_Np]; 
+//     @shared dfloat s_LSF[p_Nq];
+//     @shared dfloat s_BLD[p_Nq];
+
+//     // prefetch global variables
+//     for(int es=0;es<p_Nel;++es;@inner(1)){
+      
+//       for(int n=0; n<p_Nq; n++; @inner(0)){
+// 				dlong e = eo+es;
+// 				if(es==0){
+// 				  s_LSF[n] = LSF[n];
+// 				  s_BLD[n] = BLD[n];
+// 				}
+
+  		
+// 	int m = n + es*p_Nq;
+// 	while(m<p_Np*p_Nel && eo*p_Np+m<Nelements*p_Np){
+// 	  const dlong id = m+eo*p_Np*p_dNfields;
+			  
+// 	  for(int fld=0; fld<p_dNfields; fld++){ 
+// 	    s_Q[0][fld][m]  = Q[id + fld*p_Np];
+// 	  }      
+// 	  m += p_Nel*p_Nq;
+// 	}
+
+// 	// reset counter
+// 	m = n + es*p_Nq;
+// 	while(m<p_Np){
+// 	  s_ModMap[m] = ModMap[m];
+// 	  m += p_Nel*p_Nq;
+// 	}
+      
+//       }
+//     }
+
+
+//     // get modal coefficients and compute L2 norm
+//     for(int es=0;es<p_Nel;++es;@inner(1)){
+//       for(int n=0; n<p_Nq; n++; @inner(0)){
+
+// 	dlong e = eo+es;
+// 	dfloat L2[p_dNfields];
+// 	dfloat Qhatn[p_dNfields]; 
+
+// #if BLDEC==1
+// 	for(int fld=0; fld<p_dNfields; fld++){ 
+// 	  L2[fld]    = 0; 
+// 	  // Qhatn[fld] = 0; 
+// 	}
+// #endif
+
+// 	if(e<Nelements){
+// 	  int nn = n;
+
+// 	  while(nn<p_Np){
+// 	    // // dfloat Qhatn[p_Nfields]; 
+// 	    for(int fld=0; fld<p_dNfields; fld++){ 
+// 	      Qhatn[fld] = 0; 
+// 	    }
+
+// #pragma unroll p_Np
+// 	    for(int m=0; m<p_Np;m++){
+// 	      const dfloat invvt = InvVT[nn+m*p_Np]; 
+// 	      for(int fld=0; fld<p_dNfields; fld++){ 
+// 					Qhatn[fld] += invvt*s_Q[es][fld][m];
+// 	      }
+// 	    }
+
+
+// 	    for(int fld=0; fld<p_dNfields; fld++){ 	    
+
+// 	      dfloat Qhatn2 = Qhatn[fld]*Qhatn[fld];
+
+// 	      s_Qhat2[es][fld][nn] = Qhatn2; 
+
+// #if BLDEC==1
+// 	      L2[fld] += Qhatn2; // accumulate
+// #endif
+// 	    }
+// 	    nn += p_Nq;
+// 	  }
+
+// #if BLDEC==1
+// 	  const dfloat J = vgeo[e*p_Nvgeo + p_JID];
+// 	  for(int fld=0; fld<p_dNfields; fld++){ 
+// 	    L2[fld] *= J;
+// 	  }
+// #endif
+
+// 	}
+
+// #if BLDEC==1
+// 	for(int fld=0; fld<p_dNfields; fld++){ 
+// 	  s_L2[es][fld][n] = L2[fld];
+// 	}
+// #endif
+//       }
+//     }
+
+
+
+
+// #if BLDEC==1
+//     // reduce02(s_L2, 128);
+//     reduce02(s_L2,  64);
+//     reduce02(s_L2,  16);
+//     reduce02(s_L2,   8);
+//     reduce02(s_L2,   4);
+//     reduce02(s_L2,   2);
+//     reduce02(s_L2,   1);
+// #endif
+//     // @barrier("local");
+
+//     //skyline pessimization: get 1D mods from 2D
+//     for(int es=0;es<p_Nel;++es;@inner(1)){    
+//       for(int n=0; n<p_Nq; n++; @inner(0)){   
+
+// 	dlong e = eo+es;
+
+// 	if(e<Nelements){
+
+// 	  dfloat modsum[p_dNfields];
+// 	  dfloat norm[p_dNfields];
+// 	  dfloat res[p_dNfields];
+
+
+// 	  for(int fld=0; fld<p_dNfields; fld++){ 
+// 	    modsum[fld] = 0; 
+// 	    norm[fld] = 0; 
+// 	    res[fld] = 0; 
+// 	  }
+
+// 	  for(int i=0; i<n+1; i++){
+// 	    const int nmods = 0.5*n*(n+1) + i; 
+// 	    const int m     = s_ModMap[nmods];  // not coalesced!!!!
+// 	    for(int fld=0; fld<p_dNfields; fld++){ 
+// 	      modsum[fld] += s_Qhat2[es][fld][m];
+// 	    }
+// 	  }
+
+
+// 	  for(int fld=0; fld<p_dNfields; fld++){ 
+// #if BLDEC==1
+// 	    // norm = q' * MM * q on element e
+// 	    norm[fld] = s_L2[es][fld][0];
+
+// 	    res[fld] = log10f((float)(modsum[fld] + s_BLD[n]*norm[fld]));     
+// #else
+// 	    res[fld] = log10f((float)(modsum[fld])); 
+// #endif
+
+// 	    s_LogMod[es][fld][n] = 0.5*res[fld]; // use log(sqrt(a)) = 0.5*log(a)
+// 	  }
+
+
+// 	  // assumes p_Nel*p_Nq <= 32
+// 	  if(n==0){
+// 	     for(int fld=0; fld<p_dNfields; fld++){ 
+// 	    	// dfloat mincoeff = 100; 
+// 	      // use running max from highest mode
+// 	      dfloat runningMax = mymax(s_LogMod[es][fld][p_Nq-1], s_LogMod[es][fld][p_Nq-2]);
+// 	      dfloat coeff = runningMax*s_LSF[p_Nq-2];
+
+// 	      for(int j=p_Nq-2;j>0;--j){
+// 					runningMax = mymax(runningMax, s_LogMod[es][fld][j]);
+// 					// accumulate in least squares fit
+// 					coeff += s_LSF[j-1]*runningMax;
+// 	      }
+// 	      // 
+// 	      const dfloat sk =fabs(coeff); 				     
+// 	      // ElementList[e*p_dNfields + fld] = sk;	 
+// 	      ElementList[e*p_dNfields + fld] = sk < 3.0 ? 1 : 0;	 
+
+// 	    }
+// 	  }
+
+// 	}
+//       }
+//     }
+//   }
+// }
 
 
 
@@ -797,41 +1016,209 @@
 }
 
 
+// @kernel void detectFindNeighTri2D(const dlong Nelements,
+//                                   @restrict const  dlong  *  vmapP,
+//                                   @restrict dfloat *  ElementList){
+
+//   for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
+
+//    for(int fld=0; fld<p_dNfields; fld++){
+//       // int fld = 0;
+//       const int em_type = ElementList[e*p_dNfields + fld];
+//       int ep_type[p_Nfaces]; 
+//       dlong ep_ids[p_Nfaces]; 
+          
+//       if(em_type==s_DGDG_TYPE){
+
+//         int all_fv = 0, en_type = s_DGDG_TYPE; 
+
+//         for(int f=0; f<p_Nfaces; f++){
+
+//           // const int ep = EToE[n*p_Nfaces + f];
+//           const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
+//           ep_ids[f]       = vmapP[idf]/p_Np;
+//           ep_type[f]      =  ElementList[ep_ids[f]*p_dNfields + fld];
+        
+//           if(ep_type[f] ==s_FVFV_TYPE){ 
+//               en_type = s_DGFV_TYPE; 
+//               all_fv +=1; 
+//             }
+//           }
+
+//         if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}
+
+//         // modify halo element
+//         if(en_type==s_FVFV_TYPE){
+//           for(int f=0; f<p_Nfaces; f++){
+//             const dlong ep = ep_ids[f]; 
+//             if(ep>=Nelements){
+//               ElementList[ep*p_dNfields + fld] = s_DGFV_TYPE;
+//             }
+//           }
+//         }
+               
+//           // ElementList[e*p_dNfields + fld] = en_type; 
+//           ElementList[e*p_dNfields + fld] = dfloat(en_type); 
+//       }
+//     }
+//   }
+// }
+
+
+
+
+// @kernel void detectFindNeighTri2D(const dlong Nelements,
+// 	                                @restrict const  dlong  *  vmapP,
+// 																	@restrict dfloat *  ElementList){
+
+//   for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
+
+// 	 for(int fld=0; fld<p_dNfields; fld++){
+// 			// int fld = 0;
+//       const int em_type = ElementList[e*p_dNfields + fld];
+//       dlong ep_ids[p_Nfaces]; 
+//       int ep_type[p_Nfaces]; 
+		      
+//       if(em_type==s_DGDG_TYPE){
+
+//       	int all_fv = 0, en_type = s_DGDG_TYPE; 
+
+//       	for(int f=0; f<p_Nfaces; f++){
+
+//       		// const int ep = EToE[n*p_Nfaces + f];
+//       		const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
+//       		ep_ids[f]       = vmapP[idf]/p_Np;
+//       		ep_type[f]      = ElementList[ep_ids[f]*p_dNfields + fld]; 
+
+//       	  // const int ep_type  =  ElementList[ep*p_dNfields + fld];
+//       	  if(ep_type[f] ==s_FVFV_TYPE){ 
+//       	  	en_type     = s_DGFV_TYPE; 
+//       	  	all_fv +=1; 
+//       	  }
+//         }
+
+//    			if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}  
+// 					// ElementList[e*p_dNfields + fld] = en_type; 
+// 					ElementList[e*p_dNfields + fld] = dfloat(en_type); 
+
+// 			// // check for halopairs
+// 			// 	for(int f=0; f<p_Nfaces; f++){
+// 			// 		 if(ep_ids[f]>Nelements && (en_type==s_FVFV_TYPE)){
+// 			// 		 		ElementList[ep_ids[f]*p_dNfields +fld] = s_DGFV_TYPE; 
+// 			// 		 }
+// 			// 		 if(ep_ids[f]>Nelements && (en_type==s_DGFV_TYPE)){
+// 			// 		 		ElementList[ep_ids[f]*p_dNfields +fld] = s_DGDG_TYPE; 
+// 			// 		 }
+// 			// 	}
+// 			}
+//     }
+//   }
+// }
+
 
 @kernel void detectFindNeighTri2D(const dlong Nelements,
 	                                @restrict const  dlong  *  vmapP,
-																	@restrict dlong *  ElementList){
+																	@restrict dfloat *  ElementList){
 
   for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
 
 	 for(int fld=0; fld<p_dNfields; fld++){
 			// int fld = 0;
       const int em_type = ElementList[e*p_dNfields + fld];
+      dlong ep_ids[p_Nfaces]; 
       int ep_type[p_Nfaces]; 
-		      
+
+      for(int f=0; f<p_Nfaces; f++){
+      	const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
+      	ep_ids[f]  = vmapP[idf]/p_Np;
+      	ep_type[f] = ElementList[ep_ids[f]*p_dNfields + fld]; 
+      }
+		  
+		  // 
       if(em_type==s_DGDG_TYPE){
-
       	int all_fv = 0, en_type = s_DGDG_TYPE; 
-
-      	for(int f=0; f<p_Nfaces; f++){
-
-      		// const int ep = EToE[n*p_Nfaces + f];
-      		const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
-      		const int ep = vmapP[idf]/p_Np;
-      	  ep_type[f]   =  ElementList[ep*p_dNfields + fld];
+      	for(int f=0; f<p_Nfaces; f++){      	  
+      	  // const int ep_type  =  ElementList[ep*p_dNfields + fld];
       	  if(ep_type[f] ==s_FVFV_TYPE){ 
-      	  	en_type = s_DGFV_TYPE; 
+      	  	en_type     = s_DGFV_TYPE; 
       	  	all_fv +=1; 
       	  }
         }
 
-   			if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}
-					     
-					ElementList[e*p_dNfields + fld] = en_type; 
+   			if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}  
+					// ElementList[e*p_dNfields + fld] = en_type; 
+					ElementList[e*p_dNfields + fld] = dfloat(en_type); 
 			}
+
+
+			// for(int f=0; f<p_Nfaces; f++){
+			// 	const dlong ep = ep_ids[f]; 
+			// 	const int ept = ElementList[ep*p_dNfields + fld];
+			// 	// this is halo element
+			// 	if(ep > Nelements && ept==s_DGFV_TYPE){
+			// 		ElementList[ep*p_dNfields + fld] = s_FVFV_TYPE;
+			// 	}
+			// }
     }
   }
 }
+
+
+
+
+
+
+
+
+
+// @kernel void detectSetTypesTri2D(const dlong Nelements,
+// 	                                @restrict const  dfloat  *  eflist,
+// 																	@restrict dfloat *  edlist){
+
+//   for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
+
+// 	 for(int fld=0; fld<p_dNfields; fld++){
+
+// 	 		edlist[e*p_dNfields + fld]  = int(eflist[e*p_dNfields + fld]);
+//     }
+//   }
+// }
+
+// @kernel void detectFindNeighTri2D(const dlong Nelements,
+// 	                                @restrict const  dlong  *  vmapP,
+// 																	@restrict dlong *  ElementList){
+
+//   for(dlong e=0;e<Nelements;++e;@tile(p_blockSize,@outer,@inner)){
+
+// 	 for(int fld=0; fld<p_dNfields; fld++){
+// 			// int fld = 0;
+//       const int em_type = ElementList[e*p_dNfields + fld];
+//       int ep_type[p_Nfaces]; 
+		      
+//       if(em_type==s_DGDG_TYPE){
+
+//       	int all_fv = 0, en_type = s_DGDG_TYPE; 
+
+//       	for(int f=0; f<p_Nfaces; f++){
+
+//       		// const int ep = EToE[n*p_Nfaces + f];
+//       		const dlong idf = e*p_Nfaces*p_Nfp + f*p_Nfp + 0; 
+//       		const int ep = vmapP[idf]/p_Np;
+//       	  ep_type[f]   =  ElementList[ep*p_dNfields + fld];
+//       	  if(ep_type[f] ==s_FVFV_TYPE){ 
+//       	  	en_type = s_DGFV_TYPE; 
+//       	  	all_fv +=1; 
+//       	  }
+//         }
+
+//    			if(all_fv==p_Nfaces){ en_type = s_FVFV_TYPE;}
+					     
+// 					ElementList[e*p_dNfields + fld] = en_type; 
+// 			}
+//     }
+//   }
+// }
+
 
 
 

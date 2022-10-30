@@ -94,6 +94,13 @@ class stab_t {
   memory<dlong> eList;
   deviceMemory<dlong> o_eList; 
 
+  // Remove Later
+  memory<dfloat> efList;
+  deviceMemory<dfloat> o_efList; 
+  kernel_t copyIntKernel; 
+
+
+
   memory<dfloat> qd;
   deviceMemory<dfloat> o_qd; 
 
@@ -154,7 +161,7 @@ class stab_t {
   int Nvgeo, Nsgeo; 
 
   // minor girid connectivity
-  memory<int> mEToV, mEToE, mEToF; 
+  memory<int> mEToV, mEToE, mEToF, mFaceNodes; 
   memory<int> faceVertices; 
   memory<dfloat> vr, vs, vt; // local vertex coordinates @ reference element
   memory<dfloat> cr, cs, ct; // center points of subcells @ reference element 
@@ -164,7 +171,7 @@ class stab_t {
 
 
   memory<int> mFToE, mFToF, mDGID; 
-  deviceMemory<int> o_mFToE, o_mFToF, o_mDGID, o_mEToV;   
+  deviceMemory<int> o_mFToE, o_mFToF, o_mDGID, o_mEToV, o_mFaceNodes;   
 
   // local projection 
   memory<dfloat> PM,  RM, PVM; // volume reconstuction, projection,  vertex  projection

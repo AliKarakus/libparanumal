@@ -70,7 +70,6 @@ void cns_t::Report(dfloat time, int tstep){
           const int vidM = vid%mesh.Np;
           const dlong qbase = eM*mesh.Np*Nfields + vidM;
 
-
           const dfloat r  = q[qbase+0*mesh.Np];
           const dfloat ru = q[qbase+1*mesh.Np];
           const dfloat rv = q[qbase+2*mesh.Np];

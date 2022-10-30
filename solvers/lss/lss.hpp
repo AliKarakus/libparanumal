@@ -67,6 +67,8 @@ public:
   ogs::halo_t vTraceHalo;
   ogs::halo_t gTraceHalo;
 
+  ogs::halo_t qHalo; 
+
   memory<dfloat> q;
   memory<dfloat> U; 
   memory<dfloat> gradq;
@@ -136,6 +138,10 @@ public:
 
   kernel_t projectFVKernel; // project DG -> Cell Centers
   kernel_t projectDGKernel; // project DG -> Cell Faces at DG-FV Interface
+
+  kernel_t partialProjectFVKernel; // project DG -> Cell Centers
+  kernel_t partialProjectDGKernel; // project DG -> Cell Faces at DG-FV Interface
+
   kernel_t reconstructFaceKernel; // compute face values
   kernel_t subcellComputeKernel; // FV Update values
   kernel_t reconstructDGKernel; // recontruct DG solution from cell averages values

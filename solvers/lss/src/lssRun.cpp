@@ -79,6 +79,9 @@ void lss_t::Run(){
   postStep(o_q, startTime, 0);
 
 
+  printf("rank: %d %d %d %d %d\n", mesh.rank, mesh.NinternalElements, mesh.NhaloElements, mesh.Nelements, mesh.totalHaloPairs); 
+
+
   timeStepper.Run(*this, o_q, startTime, finalTime);
  
   // output norm of final solution

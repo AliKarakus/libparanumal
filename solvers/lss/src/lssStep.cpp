@@ -452,8 +452,10 @@ void lss_t::RedistanceSubcell(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o
 // Detect troubled elements
 stab.detectApply(o_Q, o_RHS, T); 
 
-// extract q halo on DEVICE
-  qTraceHalo.ExchangeStart(o_Q, 1);
+// qTraceHalo.ExchangeStart(o_Q, 1);
+mesh.halo.ExchangeStart(o_Q, Nfields*mesh.Np);
+// mesh.halo.Exchange(o_Q, Nfields*mesh.Np);
+
 
  redistanceVolumeKernel(mesh.Nelements,
                        T,
@@ -463,22 +465,13 @@ stab.detectApply(o_Q, o_RHS, T);
                        o_Q,
                        o_gradq);
 
-  qTraceHalo.ExchangeFinish(o_Q, 1);
 
-  // Get cell averages from nodal solution
-  projectDGKernel((mesh.Nelements + mesh.totalHaloPairs),
-                   stab.o_eList, 
-                   mesh.o_vmapM,
-                   stab.o_mFToE,
-                   stab.o_mFToF,
-                   stab.o_PFM,
-                   o_Q,
-                   o_sface);
+ mesh.halo.ExchangeFinish(o_Q, Nfields*mesh.Np);
 
   redistanceSurfaceKernel(mesh.Nelements,
                           stab.o_eList, 
                           mesh.o_sgeo,
-                          mesh.o_LIFT,
+                          mesh.o_LIFT,   
                           mesh.o_vmapM,
                           mesh.o_vmapP,
                           mesh.o_EToB,
@@ -490,15 +483,30 @@ stab.detectApply(o_Q, o_RHS, T);
                           o_gradq,
                           o_RHS);
 
-    // Get cell averages from nodal solution
-    projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
-                  stab.o_eList, 
-                  stab.o_PM,
-                  o_Q,
-                  o_sq);
+ // Get subcell face values 
+  projectDGKernel(mesh.Nelements,
+                   stab.o_eList, 
+                   stab.o_mFaceNodes, // mesh.o_vmapM,    
+                   stab.o_mFToE,
+                   stab.o_mFToF,
+                   stab.o_PFM,
+                   o_Q,
+                   o_sface);
+
+  mesh.halo.Exchange(o_sface, stab.sNfields*stab.Nsubcells*stab.Nfaces);
 
 
-     // Reconstruct face values for all subcells 
+  // Get cell averages from nodal solution
+  projectFVKernel(mesh.Nelements + mesh.totalHaloPairs,
+                          stab.o_eList, 
+                          stab.o_PM,
+                          o_Q,
+                          o_sq);
+
+
+// mesh.halo.Exchange(o_sq, stab.sNfields*stab.Nsubcells);
+
+// Reconstruct face values for all subcells 
      reconstructFaceKernel(mesh.Nelements, 
                           stab.o_eList,
                           stab.o_vgeo,
@@ -509,18 +517,20 @@ stab.detectApply(o_Q, o_RHS, T);
                           o_sq,
                           o_sface);  
 
+  // mesh.halo.Exchange(o_sq, stab.sNfields*stab.Nsubcells);
+  // mesh.halo.Exchange(o_sface, stab.sNfields*stab.Nsubcells*stab.Nfaces);
 
-       // FV compute 
-     subcellComputeKernel(mesh.Nelements, 
-                              stab.o_eList,
-                              stab.o_emapP,
-                              stab.o_fmapP, 
-                              stab.o_RM,
-                              stab.o_vgeo,
-                              stab.o_sgeo, 
-                              o_Q,
-                              o_sface, 
-                              o_srhs);  
+   // FV compute 
+ subcellComputeKernel(mesh.Nelements, 
+                          stab.o_eList,
+                          stab.o_emapP,
+                          stab.o_fmapP, 
+                          stab.o_RM,
+                          stab.o_vgeo,
+                          stab.o_sgeo, 
+                          o_Q,
+                          o_sface, 
+                          o_srhs);  
 
 
  reconstructDGKernel(mesh.Nelements, 
@@ -530,11 +540,90 @@ stab.detectApply(o_Q, o_RHS, T);
                      o_RHS);
 
 
- // const dlong N = mesh.Nelements*stab.Nsubcells*Nfields; 
- // platform.linAlg().set(N, 0.0, o_sq); 
- // platform.linAlg().set(N, 0.0, o_srhs); 
- // platform.linAlg().set(N*mesh.Nfaces, 0.0, o_sface); 
 
+
+
+
+
+// // Detect troubled elements
+// stab.detectApply(o_Q, o_RHS, T); 
+
+// // extract q halo on DEVICE
+//   qTraceHalo.ExchangeStart(o_Q, 1);
+
+//  redistanceVolumeKernel(mesh.Nelements,
+//                        T,
+//                        stab.o_eList, 
+//                        mesh.o_vgeo,
+//                        mesh.o_DW,
+//                        o_Q,
+//                        o_gradq);
+
+//   qTraceHalo.ExchangeFinish(o_Q, 1);
+
+//   // Get cell averages from nodal solution
+//   projectDGKernel((mesh.Nelements + mesh.totalHaloPairs),
+//                    stab.o_eList, 
+//                    mesh.o_vmapM,
+//                    stab.o_mFToE,
+//                    stab.o_mFToF,
+//                    stab.o_PFM,
+//                    o_Q,
+//                    o_sface);
+
+//   redistanceSurfaceKernel(mesh.Nelements,
+//                           stab.o_eList, 
+//                           mesh.o_sgeo,
+//                           mesh.o_LIFT,
+//                           mesh.o_vmapM,
+//                           mesh.o_vmapP,
+//                           mesh.o_EToB,
+//                           T,
+//                           mesh.o_x,
+//                           mesh.o_y,
+//                           mesh.o_z,
+//                           o_Q,
+//                           o_gradq,
+//                           o_RHS);
+
+//     // Get cell averages from nodal solution
+//     projectFVKernel((mesh.Nelements + mesh.totalHaloPairs),
+//                   stab.o_eList, 
+//                   stab.o_PM,
+//                   o_Q,
+//                   o_sq);
+
+
+//      // Reconstruct face values for all subcells 
+//      reconstructFaceKernel(mesh.Nelements, 
+//                           stab.o_eList,
+//                           stab.o_vgeo,
+//                           stab.o_sgeo, 
+//                           stab.o_emapP,
+//                           stab.o_fmapP, 
+//                           o_Q, 
+//                           o_sq,
+//                           o_sface);  
+
+
+//        // FV compute 
+//      subcellComputeKernel(mesh.Nelements, 
+//                               stab.o_eList,
+//                               stab.o_emapP,
+//                               stab.o_fmapP, 
+//                               stab.o_RM,
+//                               stab.o_vgeo,
+//                               stab.o_sgeo, 
+//                               o_Q,
+//                               o_sface, 
+//                               o_srhs);  
+
+
+//  reconstructDGKernel(mesh.Nelements, 
+//                      stab.o_eList,
+//                      stab.o_RM,
+//                      o_srhs, 
+//                      o_RHS);
 }
 
 

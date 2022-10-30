@@ -31,7 +31,7 @@ namespace libp {
 void stab_t::detectSetupPersson(){
 
   // Initialize Required Memeory
-  eList.malloc(mesh.Nelements*dNfields); 
+  eList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_eList = platform.malloc<dlong>(eList); 
 
   // Project to modal space spans N-1
@@ -181,6 +181,11 @@ if(stabType==Stab::ARTDIFF){
                  o_eList); 
 
  }
+
+
+ mesh.halo.Exchange(o_eList, dNfields); 
+
+ printf("%d\t%d\n", mesh.NhaloElements, mesh.totalHaloPairs);
 
 }
 

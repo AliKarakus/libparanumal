@@ -48,6 +48,18 @@ SOFTWARE.
 }
 
 
+//copy a dlong array to float to use buildin functions
+@kernel void copyInt(const dlong N, 
+                      @restrict dfloat  *a, 
+                      @restrict dlong *b){
+
+  for(dlong n=0;n<N;++n;@tile(p_blockSize,@outer,@inner)){
+    b[n] = int(a[n]);
+  }
+}
+
+
+
 
 // //copy a dlong array to float to use buildin functions
 // @kernel void cnsConservativeToPrimitive2D(const dlong Nelements, 
