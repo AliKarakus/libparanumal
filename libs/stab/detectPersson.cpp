@@ -34,6 +34,11 @@ void stab_t::detectSetupPersson(){
   eList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_eList = platform.malloc<dlong>(eList); 
 
+   // Initialize Required Memeory: Remove LaterAK!
+  efList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
+  o_efList = platform.malloc<dfloat>(efList); 
+
+
   // Project to modal space spans N-1
   projectNm1.malloc(mesh.Np*mesh.Np);
 
@@ -138,6 +143,9 @@ void stab_t::detectSetupPersson(){
   fileName        = oklFilePrefix + "utilities" + oklFileSuffix; 
   kernelName      = "copyFloat";
   copyFloatKernel = platform.buildKernel(fileName, kernelName, props);  
+
+   kernelName      = "copyInt";
+  copyIntKernel = platform.buildKernel(fileName, kernelName, props); 
 }
 
 

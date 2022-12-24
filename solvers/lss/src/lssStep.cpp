@@ -539,12 +539,6 @@ mesh.halo.ExchangeStart(o_Q, Nfields*mesh.Np);
                      o_srhs, 
                      o_RHS);
 
-
-
-
-
-
-
 // // Detect troubled elements
 // stab.detectApply(o_Q, o_RHS, T); 
 

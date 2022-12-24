@@ -34,7 +34,7 @@ void stab_t::detectSetupKlockner(){
   eList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_eList = platform.malloc<dlong>(eList); 
 
-  // Initialize Required Memeory
+  // Initialize Required Memeory: Remove LaterAK!
   efList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_efList = platform.malloc<dfloat>(efList); 
 
