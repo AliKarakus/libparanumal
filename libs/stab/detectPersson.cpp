@@ -34,22 +34,21 @@ void stab_t::detectSetupPersson(){
   eList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_eList = platform.malloc<dlong>(eList); 
 
-   // Initialize Required Memeory: Remove LaterAK!
+  // Initialize Required Memeory: Remove LaterAK!
   efList.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields); 
   o_efList = platform.malloc<dfloat>(efList); 
+
+  qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
+  o_qd = platform.malloc<dfloat>(qd); 
 
 
   // Project to modal space spans N-1
   projectNm1.malloc(mesh.Np*mesh.Np);
 
-  // 
-  qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
-  o_qd = platform.malloc<dfloat>(qd); 
-
-  // Compute Art. Diff. Activation function as well!!!!
-  if(stabType==Stab::ARTDIFF){
-    viscRamp.malloc(mesh.Nelements*dNfields, 0.0); 
-    o_viscRamp = platform.malloc<dfloat>(viscRamp); 
+  // Compute Art. Diff. Activation function as well
+  if(stabType==Stab::ARTDIFF){ // Vertex based to make it continuous
+    viscActivation.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields, 0.0); 
+    o_viscActivation = platform.malloc<dfloat>(viscActivation); 
   }
 
 
@@ -103,6 +102,7 @@ void stab_t::detectSetupPersson(){
 
    props["defines/" "p_dNfields"]= dNfields;
    props["defines/" "p_sNfields"]= sNfields;
+   props["defines/" "p_sNverts"] = mesh.Nverts;  
    props["defines/" "p_Nq"]= mesh.N+1;
 
     if(stabType==Stab::SUBCELL){
@@ -131,11 +131,12 @@ void stab_t::detectSetupPersson(){
   if(stabType==Stab::ARTDIFF){
     kernelName    = "detectPerssonDiffusion" + suffix;
   }else{
-    kernelName    = "detectPersson" + suffix;  
+    kernelName    = "detectPersson" + suffix;
   }
   detectKernel  = platform.buildKernel(fileName, kernelName, props);
 
   if(stabType==Stab::SUBCELL){
+    fileName      = oklFilePrefix + "subcell" + oklFileSuffix;
     kernelName    = "detectFindNeigh" + suffix;
     findNeighKernel =  platform.buildKernel(fileName, kernelName, props);
   }
@@ -144,8 +145,11 @@ void stab_t::detectSetupPersson(){
   kernelName      = "copyFloat";
   copyFloatKernel = platform.buildKernel(fileName, kernelName, props);  
 
-   kernelName      = "copyInt";
-  copyIntKernel = platform.buildKernel(fileName, kernelName, props); 
+  kernelName      = "copyInt";
+  copyIntKernel   = platform.buildKernel(fileName, kernelName, props); 
+
+  kernelName         = "extractField";
+  extractFieldKernel = platform.buildKernel(fileName, kernelName, props); 
 }
 
 
@@ -155,7 +159,12 @@ void stab_t::detectApplyPersson(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>&
 if(solverType==Stab::HJS){
   o_qd.copyFrom(o_Q); 
 }else if(solverType==Stab::CNS){
-  o_qd.copyFrom(o_Q); // will be changed later! AK 
+  // Use Density field for now AK:
+  const int field_id = 0; 
+  extractFieldKernel(mesh.Nelements,
+                     field_id, 
+                     o_Q,
+                     o_qd); 
 }
 
 if(stabType==Stab::ARTDIFF){
@@ -165,8 +174,10 @@ if(stabType==Stab::ARTDIFF){
                mesh.o_MM, 
                o_projectNm1, 
                o_qd,
-               o_viscRamp, 
-               o_eList); 
+               o_viscActivation, 
+               o_eList);
+
+
  }else if(stabType==Stab::SUBCELL){
    // Detect elements for each fields i.e. 2
   detectKernel(mesh.Nelements, 
@@ -191,9 +202,9 @@ if(stabType==Stab::ARTDIFF){
  }
 
 
- mesh.halo.Exchange(o_eList, dNfields); 
+ // mesh.halo.Exchange(o_eList, dNfields); 
 
- printf("%d\t%d\n", mesh.NhaloElements, mesh.totalHaloPairs);
+ // printf("%d\t%d\n", mesh.NhaloElements, mesh.totalHaloPairs);
 
 }
 

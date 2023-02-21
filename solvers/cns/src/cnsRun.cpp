@@ -49,10 +49,41 @@ void cns_t::Run(){
   dfloat vmax = MaxWaveSpeed(o_q, startTime);
 
   dfloat dtAdv  = cfl/(vmax*(mesh.N+1.)*(mesh.N+1.));
-  dfloat dtVisc = cfl*pow(hmin, 2)/(pow(mesh.N+1,4)*mu);
+  
+  // For Euler tests optout viscous time resitriction 
+  dfloat dtVisc = mu > 1E-12 ? cfl*pow(hmin, 2)/(pow(mesh.N+1,4)*mu): 1E12;
+  // dfloat dtVisc = mu > 1E-12 ? cfl*pow(hmin, 2)/(pow(mesh.N+1,4)*hmin/mesh.N): 1E12;
 
   dfloat dt = std::min(dtAdv, dtVisc);
+
+  printf("time step size: %.4e", dt);
   timeStepper.SetTimeStep(dt);
+
+
+ //  stab.detectApply(o_q, o_q, 0.0); 
+
+ //  const dfloat alpha = 1.0; 
+ //  stab.computeViscosityKernel(mesh.Nelements*mesh.Nverts, 
+ //                             alpha, 
+ //                             stab.o_viscActivation,
+ //                             stab.o_viscScale,
+ //                             stab.o_vertexVisc); 
+
+ // // stab.Report(0,0);
+
+ //  stab.ogs.GatherScatter(stab.o_vertexVisc, 1, ogs::Add, ogs::Sym); 
+ //  platform.linAlg().amx(mesh.Nelements*mesh.Nverts, 1, stab.o_weight, stab.o_vertexVisc); 
+
+ //  stab.projectViscosityKernel(mesh.Nelements, 
+ //                             stab.o_projectVisc,
+ //                             stab.o_vertexVisc,
+ //                             stab.o_visc); 
+    
+
+
+ //  stab.Report(0,0);
+
+ //  Report(0,0);
 
   timeStepper.Run(*this, o_q, startTime, finalTime);
 

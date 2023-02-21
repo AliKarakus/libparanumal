@@ -79,7 +79,7 @@ endif
 endif
 
 #libraries
-CNS_LIBP_LIBS=timeStepper mesh parAdogs ogs linAlg core
+CNS_LIBP_LIBS=timeStepper mesh parAdogs ogs linAlg core stab
 
 #includes
 INCLUDES=${LIBP_INCLUDES} \

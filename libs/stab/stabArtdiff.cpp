@@ -30,7 +30,7 @@ namespace libp {
 
 void stab_t::stabSetupArtdiff(){
 
-  // Compute viscosity scaling i.e. mesh_length/ mesh.N
+  // Compute viscosity scaling i.e. alpha * mesh_length/ mesh.N
   // so that visc = vmax* (Viscosity Scaling * Viscosity Ramp) 
   viscScale.malloc(mesh.Nelements); 
   for(dlong e=0; e < mesh.Nelements; e++){
@@ -51,10 +51,58 @@ void stab_t::stabSetupArtdiff(){
   } 
   o_viscScale = platform.malloc<dfloat>(viscScale); 
 
+
+
+  // Smooth Viscosity Using Vertex Values
+  vertexVisc.malloc(mesh.Nelements*mesh.Nverts*dNfields, 0.0); 
+  o_vertexVisc = platform.malloc<dfloat>(vertexVisc); 
+
   // Allocate Memory for Artificial Viscosity
   visc.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields, 0.0); 
   o_visc = platform.malloc<dfloat>(visc); 
-  
+
+   memory<dfloat> V, invV1, r1, s1, t1;
+  // Compute projection matrix 
+  switch(mesh.elementType){
+    case Mesh::TRIANGLES:
+      mesh.NodesTri2D(1, r1, s1);
+      mesh.VandermondeTri2D(1, r1, s1, invV1);
+      mesh.VandermondeTri2D(1, mesh.r, mesh.s, V);
+      break; 
+    case Mesh::QUADRILATERALS:
+      mesh.NodesQuad2D(1, r1, s1);
+      mesh.VandermondeQuad2D(1, r1, s1, invV1);
+      break; 
+    case Mesh::TETRAHEDRA:
+      mesh.NodesTet3D(1, r1, s1, t1);
+      mesh.VandermondeTet3D(1, r1, s1, t1, invV1);
+      break; 
+    case Mesh::HEXAHEDRA:
+      mesh.NodesHex3D(1,r1, s1, t1); 
+      mesh.VandermondeHex3D(1, mesh.r, mesh.s, mesh.t, invV1);
+      break; 
+  }
+
+  // invert N=1 Vandermonde Matrix
+  linAlg_t::matrixInverse(mesh.Nverts, invV1);
+
+  projectVisc.malloc(mesh.Nverts*mesh.Np, 0.0); 
+  // Transponse of Projection Operator
+  for(int i=0; i<mesh.Np; i++){
+    for(int j=0; j<mesh.Nverts; j++){
+      dfloat sum = 0; 
+      for(int m=0; m<mesh.Nverts; m++){
+          sum += V[i*mesh.Nverts + m]*invV1[m*mesh.Nverts + j]; 
+      }
+
+      // printf("%.5f ", sum);
+      projectVisc[j*mesh.Np + i] = sum; 
+    }
+    // printf("\n");
+  } 
+   o_projectVisc = platform.malloc<dfloat>(projectVisc);
+
+     
   int blockMax = 256;
   if (platform.device.mode() == "CUDA") blockMax = 512;
 
@@ -79,6 +127,9 @@ void stab_t::stabSetupArtdiff(){
   fileName      = oklFilePrefix + "artDiff" + oklFileSuffix;
   kernelName    = "computeViscosity";
   computeViscosityKernel  = platform.buildKernel(fileName, kernelName, props);
+
+  kernelName    = "projectViscosity" + suffix;
+  projectViscosityKernel  = platform.buildKernel(fileName, kernelName, props);
 
 }
 

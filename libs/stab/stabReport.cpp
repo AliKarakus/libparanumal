@@ -42,10 +42,24 @@ void stab_t::Report(dfloat time, int tstep){
     sprintf(fname, "detect_%04d_%04d.vtu", mesh.rank, frame);
 	
 	  // copy data back to host
-  	o_eList.copyTo(eList);
+  	if(eList.length()!=0){
+      o_eList.copyTo(eList);
+    };
     
-    if(viscRamp.length()!=0){ o_viscRamp.copyTo(viscRamp);}
-  	PlotElements(eList, std::string(fname));
+    if(o_viscActivation.length()!=0){ 
+      o_viscActivation.copyTo(viscActivation);
+    }
+  	
+    if(o_visc.length()!=0){ 
+      o_visc.copyTo(visc);
+    }
+
+    if(o_vertexVisc.length()!=0){ 
+      o_vertexVisc.copyTo(vertexVisc);
+    }
+
+
+    PlotElements(eList, std::string(fname));
 
     sprintf(fname, "stab_%04d_%04d.vtu", mesh.rank, frame);
     if(visc.length()!=0){ o_visc.copyTo(visc); }
@@ -125,19 +139,51 @@ void stab_t::PlotElements(memory<dlong> ElementList, const std::string fileName)
 
 
 
-  if(viscRamp.length()!=0){
- fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Ramp\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+  if(viscActivation.length()!=0){
+ fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Viscous Activation\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
   for(dlong e=0;e<mesh.Nelements;++e){
       for(int n=0;n<mesh.Nverts;++n){
           fprintf(fp, "       ");
            for(int fld=0; fld<dNfields; fld++){
-             fprintf(fp, "%g ", dfloat(viscRamp[e*dNfields + fld]));
+             fprintf(fp, "%g ", dfloat(viscActivation[e*dNfields + fld]));
           }
           fprintf(fp, "\n");
       }
     }
   fprintf(fp, "       </DataArray>\n");
   }
+
+
+ //  if(viscScale.length()!=0){
+ // fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Scale\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+ //  for(dlong e=0;e<mesh.Nelements;++e){
+ //      for(int n=0;n<mesh.Nverts;++n){
+ //          fprintf(fp, "       ");
+ //           for(int fld=0; fld<dNfields; fld++){
+ //             fprintf(fp, "%g ", dfloat(viscScale[e*dNfields + fld]));
+ //          }
+ //          fprintf(fp, "\n");
+ //      }
+ //    }
+ //  fprintf(fp, "       </DataArray>\n");
+ //  }
+
+if(vertexVisc.length()!=0){
+ fprintf(fp, "        <DataArray type=\"Float32\" Name=\"vertexVisc\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
+  for(dlong e=0;e<mesh.Nelements;++e){
+      for(int n=0;n<mesh.Nverts;++n){
+          fprintf(fp, "       ");
+           for(int fld=0; fld<dNfields; fld++){
+             fprintf(fp, "%g ", dfloat(vertexVisc[e*mesh.Nverts*dNfields + fld*mesh.Nverts + n]));
+          }
+          fprintf(fp, "\n");
+      }
+    }
+  fprintf(fp, "       </DataArray>\n");
+  }
+
+
+
 
 
   fprintf(fp, "     </PointData>\n");

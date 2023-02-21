@@ -104,11 +104,7 @@ class stab_t {
   memory<dfloat> qd;
   deviceMemory<dfloat> o_qd; 
 
-  // Memory for artificial Viscosity Activation Function 
-  // just in case it is needed!!!!
-  memory<dfloat> viscRamp; 
-  deviceMemory<dfloat> o_viscRamp; 
-
+  
   // Klockner Detector
   memory<int> modeMap; 
   deviceMemory<int> o_modeMap;
@@ -123,6 +119,7 @@ class stab_t {
 
   kernel_t detectKernel; 
   kernel_t copyFloatKernel; 
+  kernel_t extractFieldKernel; 
 
   /*****************************/
   /*   FILTER STABILIZATION    */
@@ -148,10 +145,33 @@ class stab_t {
   memory<dfloat> viscScale; 
   deviceMemory<dfloat> o_viscScale; 
 
+  memory<dfloat> weight; 
+  deviceMemory<dfloat> o_weight; 
+
+
+  // Memory for artificial Viscosity Activation Function 
+  // just in case it is needed!!!!
+  memory<dfloat> viscActivation; 
+  deviceMemory<dfloat> o_viscActivation; 
+
+  memory<dfloat> vertexVisc; 
+  deviceMemory<dfloat> o_vertexVisc; 
+
   memory<dfloat> visc; 
   deviceMemory<dfloat> o_visc; 
 
+  memory<dfloat> projectVisc; 
+  deviceMemory<dfloat> o_projectVisc; 
+
+  // smmoth out viscosity
+  ogs::ogs_t ogs;
+  // memory<dfloat> vweight; 
+  // deviceMemory<dfloat> o_vweight; 
+
+
+  // Vertex Viscosity  
   kernel_t computeViscosityKernel; 
+  kernel_t projectViscosityKernel; 
 
   /*******************************************/
   /*         SUBCELL STABILIZATION           */

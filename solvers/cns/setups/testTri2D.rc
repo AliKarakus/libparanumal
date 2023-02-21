@@ -1,0 +1,122 @@
+[FORMAT]
+2.0
+
+[DATA FILE]
+#data/cnsGaussian2D.h
+#data/cnsInviscidUniform2D.h
+data/cnsUniform2D.h
+#data/cnsGaussian2D.h
+
+[MESH FILE]
+#BOX
+#../../meshes/cnsFFS.msh
+#../../meshes/testNACA12_v3.msh
+#../../meshes/testNACA12_v5.msh
+../../meshes/cnsNACA12_v5.msh
+
+[MESH DIMENSION]
+2
+
+[ELEMENT TYPE] # number of edges
+3
+
+[BOX NX]
+20
+
+[BOX NY]
+20
+
+[BOX NZ]
+20
+
+[BOX BOUNDARY FLAG]
+-1
+
+[POLYNOMIAL DEGREE]
+4
+
+[THREAD MODEL]
+CUDA
+
+[PLATFORM NUMBER]
+0
+
+[DEVICE NUMBER]
+0
+
+[GAMMA]
+1.4
+
+[NONDIMENSIONAL EQUATIONS]
+TRUE
+
+# use if nondimensional is TRUE
+[MACH NUMBER]
+#0.4
+#0.8
+1.2
+
+# if nondimensional is TRUE
+[REYNOLDS NUMBER]
+5000
+
+[PRANDTL NUMBER]
+0.72
+
+[GAS CONSTANT]
+4.464285714285714
+#287.058
+
+[BULK VISCOSITY]
+0.0002
+
+[VISCOSITY TYPE]
+SUTHERLAND
+#CONSTANT
+
+[ISOTHERMAL]
+FALSE
+#TRUE
+
+#Can be COLLOCATION or CUBATURE
+[ADVECTION TYPE]
+CUBATURE
+#COLLOCATION
+
+[CFL NUMBER]
+0.1
+
+[TIME INTEGRATOR]
+#LSERK4
+DOPRI5
+
+# HJS:1  CNS:2  INS:3 
+[STABILIZATION SOLVER TYPE]
+2
+
+# Klockner: 1 Persson: 2
+[DETECTOR TYPE]
+1
+
+# Filter: 1, Limiter: 2, Artdiff: 3, Subcell: 4
+[STAB TYPE]
+3
+
+[ARTDIFF TYPE]
+LAPLACE
+#PHYSICAL
+
+[START TIME]
+0
+
+[FINAL TIME]
+25
+
+[OUTPUT INTERVAL]
+1.0
+
+[OUTPUT TO FILE]
+TRUE
+
+[OUTPUT FILE NAME]
+cns

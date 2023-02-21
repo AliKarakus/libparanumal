@@ -30,6 +30,7 @@ SOFTWARE.
 #include "core.hpp"
 #include "platform.hpp"
 #include "mesh.hpp"
+#include "stab.hpp"
 #include "solver.hpp"
 #include "timeStepper.hpp"
 #include "linAlg.hpp"
@@ -44,12 +45,24 @@ public:
   void report();
   void parseFromFile(platformSettings_t& platformSettings,
                      meshSettings_t& meshSettings,
+                     stabSettings_t& stabSettings,
                      const std::string filename);
 };
+
+
+// namespace  {
+//   /*Viscosity Model*/
+//   enum ViscosityType {
+//     CONSTANT      =1,
+//     SUTHERLAND    =2,
+//     POWER         =3,
+//   };
+// } //namespace Stab
 
 class cns_t: public solver_t {
 public:
   mesh_t mesh;
+  stab_t stab;
 
   int Nfields;
   int Ngrads;
@@ -57,8 +70,28 @@ public:
   dfloat mu;
   dfloat gamma;
 
+  dfloat Ma;  // Mach Number
+  dfloat Re;  // Reynolds Number
+  dfloat R;   // Gas Constant
+  dfloat cp;  // Heat capacity for constant pressure
+  dfloat cv;  // Heat capacity for constant volume
+  dfloat Pr;  // Prandtl Number
+  dfloat Tref;  // Reference Temperature
+
+  int Nph; // number of physical parameters 
+  int MUID, GMID, RRID, PRID, CPID, CVID; 
+  int EXID, TRID, TSID, CSID; 
+
+
   int cubature;
   int isothermal;
+  int inviscid; 
+
+  int useNonDimensionalEqn; 
+  int viscType; 
+
+  memory<dfloat> pCoeff; //  Physical coefficients 
+  deviceMemory<dfloat> o_pCoeff; 
 
   timeStepper_t timeStepper;
 
@@ -92,13 +125,13 @@ public:
   kernel_t maxWaveSpeedKernel;
 
   cns_t() = default;
-  cns_t(platform_t &_platform, mesh_t &_mesh,
+  cns_t(platform_t &_platform, mesh_t &_mesh, stab_t &_stab, 
               cnsSettings_t& _settings) {
-    Setup(_platform, _mesh, _settings);
+    Setup(_platform, _mesh, _stab, _settings);
   }
 
   //setup
-  void Setup(platform_t& _platform, mesh_t& _mesh,
+  void Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
              cnsSettings_t& _settings);
 
   void Run();
@@ -109,7 +142,13 @@ public:
 
   void rhsf(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
 
+  void rhsNoStab(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
+  void rhsArtDiff(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
+
   dfloat MaxWaveSpeed(deviceMemory<dfloat>& o_Q, const dfloat T);
+
+  void postStep(deviceMemory<dfloat>& o_q,  const dfloat time, const dfloat dt);
+  void postStage(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time, const dfloat dt);
 };
 
 #endif

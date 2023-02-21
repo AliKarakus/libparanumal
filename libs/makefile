@@ -112,9 +112,9 @@ LIBMESH_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/mesh/*.h)   \
 						 $(wildcard ${LIBP_INCLUDE_DIR}/mesh/*.hpp) \
 						 ${LIB_DEPS}
 
-LIBSTAB_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/stab/*.h)   \
-						 $(wildcard ${LIBP_INCLUDE_DIR}/stab/*.hpp) \
-						 ${LIB_DEPS}
+# LIBSTAB_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/stab/*.h)   \
+# 						 $(wildcard ${LIBP_INCLUDE_DIR}/stab/*.hpp) \
+# 						 ${LIB_DEPS}
 
 LIBOGS_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/ogs/*.h)   \
 						$(wildcard ${LIBP_INCLUDE_DIR}/ogs/*.hpp) \

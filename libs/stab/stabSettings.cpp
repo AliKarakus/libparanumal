@@ -47,6 +47,11 @@ stabSettings_t::stabSettings_t(comm_t _comm):
              "Stabilization type: FILTER:1, LIMITER:2, ART_DIFF:3, SUBCELL:4",
              {"1", "2", "3", "4"});
 
+  newSetting("ARTDIFF TYPE",
+             "LAPLACE",
+             "ARTIFICIAL DIFFUSION TYPE",
+             {"LAPLACE", "PHYSICAL"});
+
   newSetting("FILTER CUTOFF",
              "1",
              "Exponential Filter Cutoff Order");

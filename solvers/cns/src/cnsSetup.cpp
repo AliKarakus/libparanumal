@@ -26,7 +26,7 @@ SOFTWARE.
 
 #include "cns.hpp"
 
-void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
+void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab, 
                   cnsSettings_t& _settings){
 
   platform = _platform;
@@ -37,12 +37,95 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
   //Trigger JIT kernel builds
   ogs::InitializeKernels(platform, ogs::Dfloat, ogs::Add);
 
+  {
+  stab = _stab; 
+  int Nc = 1; 
+  mesh_t meshC = mesh.SetupNewDegree(Nc);
+  
+  bool verbose = true,  unique  = true; 
+  stab.ogs.Setup(mesh.Nelements*mesh.Nverts, meshC.globalIds, mesh.comm, 
+                ogs::Signed, ogs::Auto, unique, verbose, platform); 
+
+
+  stab.weight.malloc(mesh.Nelements*mesh.Nverts, 1.0);
+  stab.ogs.GatherScatter(stab.weight, 1, ogs::Add, ogs::Sym); 
+  for(int i=0; i < mesh.Nelements*mesh.Nverts; i++ ){ 
+    stab.weight[i] = 1./stab.weight[i];
+  }
+
+    stab.o_weight = platform.malloc<dfloat>(stab.weight); 
+
+  }
+
+
+{
   //get physical paramters
-  settings.getSetting("VISCOSITY", mu);
+  useNonDimensionalEqn = settings.compareSetting("NONDIMENSIONAL EQUATIONS","TRUE")? 1:0;
+  
+  Nph  = 6;  
+  pCoeff.malloc(Nph,0.0);
+  MUID = 0; 
+  GMID = 1; 
+  PRID = 2; 
+  RRID = 3; 
+  CPID = 4; 
+  CVID = 5; 
+
   settings.getSetting("GAMMA", gamma);
+  settings.getSetting("PRANDTL NUMBER", Pr); 
+
+  if(useNonDimensionalEqn){
+    settings.getSetting("REYNOLDS NUMBER", Re);
+    settings.getSetting("MACH NUMBER", Ma);
+    // Set viscosity to 1/Re 
+    mu = 1.0/Re; 
+    // Set gas constant to 1/(gamma*Ma^2) 
+    R  = 1.0/(gamma*Ma*Ma); 
+    // Reference Temperature // Tref = p_ref/r_ref * gamma
+    // Assuming r_ref = 1, u_ref = 1, p_ref = r_ref * u_ref^2/(Ma^2*gamma)
+    Tref = 1;
+  }else{
+    settings.getSetting("BULK VISCOSITY", mu);
+    settings.getSetting("GAS CONSTANT", R); 
+    settings.getSetting("REFERENCE TEMPERATURE", Tref); 
+  }
+
+  cp=R*gamma/(gamma-1.0); 
+  cv=R/(gamma-1.0); 
+
+    pCoeff[MUID] = mu; // Bulk Viscosity
+    pCoeff[PRID] = Pr; // Prandtl Number
+    pCoeff[RRID] = R;  // Specific Gas Constant
+    pCoeff[GMID] = gamma; // 
+    pCoeff[CPID] = cp;
+    pCoeff[CVID] = cv;
+
+  // // Set viscosity treatment
+  // int Nph = 0; 
+  if(settings.compareSetting("VISCOSITY TYPE","CONSTANT")){
+    viscType = 1; // CONSTANT
+  }else if(settings.compareSetting("VISCOSITY TYPE","SUTHERLAND")){
+    viscType = 2; // SUTHERLAND temperature dependency
+    Nph      += 4;  
+    EXID = 6; 
+    TRID = 7; 
+    TSID = 8; 
+    CSID = 9; 
+    pCoeff.realloc(Nph);
+    // // Tr = 273.15; Ts = 110.4; exp = 1.5;  
+    pCoeff[EXID] = 1.5;            // exponent  
+    pCoeff[TRID] = 1.0/Tref;       // inverse of reference temperature = 1/Tref   
+    pCoeff[TSID] = 110.4/273.15;   // Ts/Tref approximately  
+    pCoeff[CSID] = pow(pCoeff[TSID],pCoeff[EXID])*(1.0+pCoeff[TSID])/(2.0*pCoeff[TSID]*pCoeff[TSID]); // exponent  
+
+  }else if(settings.compareSetting("VISCOSITY TYPE","POWER")){
+    viscType = 3; // POWER LAW temperature dependency 
+  }
+}
 
   cubature   = (settings.compareSetting("ADVECTION TYPE", "CUBATURE")) ? 1:0;
   isothermal = (settings.compareSetting("ISOTHERMAL", "TRUE")) ? 1:0;
+  inviscid   =  mu < 1E-10 ? 1:0;
 
   //setup cubature
   if (cubature) {
@@ -50,10 +133,21 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
     mesh.CubaturePhysicalNodes();
   }
 
+  // Number of conserved fields
   Nfields   = (mesh.dim==3) ? 4:3;
-  Ngrads = mesh.dim*mesh.dim;
+  // include energy equation for non-isothermal model
+  if (!isothermal) Nfields++; 
 
-  if (!isothermal) Nfields++; //include energy equation
+  if(stab.stabType==Stab::ARTDIFF){
+    if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+      Ngrads = mesh.dim*Nfields; // for all conservative fields
+    }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
+      Ngrads = mesh.dim*mesh.dim; // just for velocity field      
+    }
+  }else{
+    Ngrads = mesh.dim*mesh.dim; // only for velocity
+  }
+
 
   dlong NlocalFields = mesh.Nelements*mesh.Np*Nfields;
   dlong NhaloFields  = mesh.totalHaloPairs*mesh.Np*Nfields;
@@ -76,7 +170,7 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
   }
 
   //setup linear algebra module
-  platform.linAlg().InitKernels({"innerProd", "max"});
+  platform.linAlg().InitKernels({"innerProd", "max", "amx", "set"});
 
   /*setup trace halo exchange */
   fieldTraceHalo = mesh.HaloTraceSetup(Nfields);
@@ -95,6 +189,10 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
   //storage for M*q during reporting
   o_Mq = platform.malloc<dfloat>(q);
   mesh.MassMatrixKernelSetup(Nfields); // mass matrix operator
+
+  // viscosity model
+  o_pCoeff = platform.malloc<dfloat>(pCoeff); 
+
 
   // OCCA build stuff
   properties_t kernelInfo = mesh.props; //copy base occa properties
@@ -131,6 +229,31 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
     int cubNblockS = std::max(1, blockMax/cubMaxNodes);
     kernelInfo["defines/" "p_cubNblockS"]= cubNblockS;
   }
+
+{
+  kernelInfo["defines/" "p_viscType"]= viscType;
+
+  kernelInfo["defines/" "p_MUID"]= MUID;
+  kernelInfo["defines/" "p_GMID"]= GMID;
+  kernelInfo["defines/" "p_PRID"]= PRID;
+  kernelInfo["defines/" "p_RRID"]= RRID;
+  kernelInfo["defines/" "p_CPID"]= CPID;
+  kernelInfo["defines/" "p_CVID"]= CVID;
+  // if(viscType==2){
+  kernelInfo["defines/" "p_EXID"]= EXID;
+  kernelInfo["defines/" "p_TRID"]= TRID;
+  kernelInfo["defines/" "p_TSID"]= TSID;
+  kernelInfo["defines/" "p_CSID"]= CSID;
+  // }
+
+
+}
+
+
+
+
+
+
 
   // set kernel name suffix
   std::string suffix;
@@ -180,41 +303,98 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh,
     if (cubature) {
       // kernels from volume file
       fileName   = oklFilePrefix + "cnsCubatureVolume" + suffix + oklFileSuffix;
-      kernelName = "cnsCubatureVolume" + suffix;
 
+      if(stab.stabType==Stab::ARTDIFF){
+        if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+          kernelName = "cnsCubatureVolumeADiffLaplace" + suffix;
+        }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
+          kernelName = "cnsCubatureVolumeADiffPhysical" + suffix;
+        }
+      }else{
+        kernelName = "cnsCubatureVolume" + suffix;
+      }
       cubatureVolumeKernel =  platform.buildKernel(fileName, kernelName,
                                                kernelInfo);
-      // kernels from surface file
+
+
       fileName   = oklFilePrefix + "cnsCubatureSurface" + suffix + oklFileSuffix;
-      kernelName = "cnsCubatureSurface" + suffix;
+      if(stab.stabType==Stab::ARTDIFF){
+        if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+          kernelName = "cnsCubatureSurfaceADiffLaplace" + suffix;
+
+        }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
+          kernelName = "cnsCubatureSurfaceADiffPhysical" + suffix;
+
+        }
+      }else{
+        kernelName = "cnsCubatureSurface" + suffix;
+      }
 
       cubatureSurfaceKernel = platform.buildKernel(fileName, kernelName,
                                                kernelInfo);
     } else {
       // kernels from volume file
       fileName   = oklFilePrefix + "cnsVolume" + suffix + oklFileSuffix;
-      kernelName = "cnsVolume" + suffix;
+
+       if(stab.stabType==Stab::ARTDIFF){
+        if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+          kernelName = "cnsVolumeADiffLaplace" + suffix;
+        }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
+          kernelName = "cnsVolumeADiffPhysical" + suffix;
+        }
+        }else{
+        kernelName = "cnsVolume" + suffix;
+       }
 
       volumeKernel =  platform.buildKernel(fileName, kernelName,
                                              kernelInfo);
+
+
       // kernels from surface file
       fileName   = oklFilePrefix + "cnsSurface" + suffix + oklFileSuffix;
-      kernelName = "cnsSurface" + suffix;
+      if(stab.stabType==Stab::ARTDIFF){
+        if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+          kernelName = "cnsSurfaceADiffLaplace" + suffix;
 
+        }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
+          kernelName = "cnsSurfaceADiffPhysical" + suffix;
+
+        }
+      }else{
+        kernelName = "cnsSurface" + suffix;
+      }
       surfaceKernel = platform.buildKernel(fileName, kernelName,
                                              kernelInfo);
     }
   }
 
-  // kernels from volume file
+
+  // kernels from volume file Add isothermal version as well AK. 
   fileName   = oklFilePrefix + "cnsGradVolume" + suffix + oklFileSuffix;
-  kernelName = "cnsGradVolume" + suffix;
+ 
+  if(stab.stabType==Stab::ARTDIFF){
+    if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+      kernelName = "cnsGradVolumeConservative" + suffix; // gradient of all conservative fields
+    }else{
+      kernelName = "cnsGradVolume" + suffix; // Compute gradient of velocity field
+    }
+  }else{
+    kernelName = "cnsGradVolume" + suffix; 
+  }
 
   gradVolumeKernel =  platform.buildKernel(fileName, kernelName,
                                            kernelInfo);
   // kernels from surface file
   fileName   = oklFilePrefix + "cnsGradSurface" + suffix + oklFileSuffix;
-  kernelName = "cnsGradSurface" + suffix;
+  if(stab.stabType==Stab::ARTDIFF){
+    if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+      kernelName = "cnsGradSurfaceConservative" + suffix; // gradient of all conservative fields
+    }else{
+      kernelName = "cnsGradSurface" + suffix; // Compute gradient of velocity field
+    }
+  }else{
+    kernelName = "cnsGradSurface" + suffix; 
+  }
 
   gradSurfaceKernel = platform.buildKernel(fileName, kernelName,
                                            kernelInfo);

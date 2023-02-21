@@ -34,13 +34,43 @@ cnsSettings_t::cnsSettings_t(comm_t _comm):
              "data/cnsTalorVortex2D.h",
              "Boundary and Initial conditions header");
 
+  newSetting("NONDIMENSIONAL EQUATIONS",
+             "FALSE",
+             "Use non-dimensional equations",
+             {"FALSE", "TRUE"});
+
   newSetting("GAMMA",
              "1.4",
              "Specific heat ratio");
 
-  newSetting("VISCOSITY",
+  newSetting("BULK VISCOSITY",
              "1.0",
-             "Fluid viscosity");
+             "Fluid bulk viscosity");
+
+  newSetting("VISCOSITY TYPE",
+             "CONSTANT",
+             "Viscosity model",
+             {"CONSTANT", "SUTHERLAND", "POWER"});
+
+  newSetting("MACH NUMBER",
+             "0.1",
+             "Mach number (if non-dimensional=TRUE)");
+
+  newSetting("REYNOLDS NUMBER",
+             "1.0",
+             "Reynolds number (if non-dimensional=TRUE)");
+
+  newSetting("PRANDTL NUMBER",
+             "0.72",
+             "Pranndtl Number");
+
+  newSetting("GAS CONSTANT",
+             "287.058",
+             "Specific gas constant (if non-dimensional=FALSE)");
+
+  // newSetting("REFERENCE TEMPERATURE",
+  //            "273.15",
+  //            "Reference temperature (if non-dimensional=FALSE)");
 
   newSetting("ISOTHERMAL",
              "FALSE",
@@ -88,8 +118,15 @@ void cnsSettings_t::report() {
     std::cout << "CNS Settings:\n\n";
 
     reportSetting("DATA FILE");
+    reportSetting("NONDIMENSIONAL EQUATIONS");
     reportSetting("GAMMA");
-    reportSetting("VISCOSITY");
+    reportSetting("MACH NUMBER");
+    reportSetting("REYNOLDS NUMBER");
+    reportSetting("PRANDTL NUMBER");
+    reportSetting("GAS CONSTANT");
+    reportSetting("BULK VISCOSITY");
+    reportSetting("VISCOSITY TYPE");
+    // reportSetting("REFERENCE TEMPERATURE");
     reportSetting("ISOTHERMAL");
     reportSetting("ADVECTION TYPE");
     reportSetting("TIME INTEGRATOR");
@@ -103,6 +140,7 @@ void cnsSettings_t::report() {
 
 void cnsSettings_t::parseFromFile(platformSettings_t& platformSettings,
                                   meshSettings_t& meshSettings,
+                                  stabSettings_t& stabSettings,
                                   const std::string filename) {
   //read all settings from file
   settings_t s(comm);
@@ -116,6 +154,8 @@ void cnsSettings_t::parseFromFile(platformSettings_t& platformSettings,
       platformSettings.changeSetting(name, val);
     else if (meshSettings.hasSetting(name))
       meshSettings.changeSetting(name, val);
+    else if (stabSettings.hasSetting(name))
+      stabSettings.changeSetting(name, val);
     else if (hasSetting(name)) //self
       changeSetting(name, val);
     else  {

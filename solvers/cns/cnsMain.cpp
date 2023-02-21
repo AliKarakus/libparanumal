@@ -39,10 +39,11 @@ int main(int argc, char **argv){
     //create default settings
     platformSettings_t platformSettings(comm);
     meshSettings_t meshSettings(comm);
+    stabSettings_t stabSettings(comm);
     cnsSettings_t cnsSettings(comm);
 
     //load settings from file
-    cnsSettings.parseFromFile(platformSettings, meshSettings,
+    cnsSettings.parseFromFile(platformSettings, meshSettings, stabSettings, 
                               argv[1]);
 
     // set up platform
@@ -50,13 +51,15 @@ int main(int argc, char **argv){
 
     platformSettings.report();
     meshSettings.report();
+    stabSettings.report();
     cnsSettings.report();
 
     // set up mesh
     mesh_t mesh(platform, meshSettings, comm);
-
+    stab_t stab(platform, mesh, stabSettings);
+    
     // set up cns solver
-    cns_t cns(platform, mesh, cnsSettings);
+    cns_t cns(platform, mesh, stab, cnsSettings);
 
     // run
     cns.Run();

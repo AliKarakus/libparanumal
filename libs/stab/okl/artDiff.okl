@@ -1,5 +1,4 @@
 /*
-
 The MIT License (MIT)
 
 Copyright (c) 2017-2022 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
@@ -21,25 +20,93 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
 */
 
-//Compute Viscosity from Ramp Function and Scale
-@kernel void computeViscosity(const dlong Nelements,
-                                   const dfloat alpha,
-                                   @restrict const dfloat *viscRamp, 
-                                   @restrict const dfloat *viscScale, 
-                                   @restrict dfloat *visc){
- for(dlong e=0;e<Nelements;e++; @outer(0)){  // for all elements
-    for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
-      const dlong id     = e*p_Np*p_dNfields + n; 
-      const dfloat scale = viscScale[e]; // (h/N) 
-      
-      for(int fld=0; fld<p_dNfields; fld++){
-        const dfloat ramp = viscRamp[e*p_dNfields + fld];
-        visc[id + fld*p_Np] = alpha*scale*ramp; // alpha* (h/N)* Activation Function 
-      }
+// //Compute Viscosity from Ramp Function and Scale
+// @kernel void computeViscosity(const dlong Nelements,
+//                                    const dfloat alpha,
+//                                    @restrict const dfloat *viscActivation, 
+//                                    @restrict const dfloat *viscScale, 
+//                                    @restrict dfloat *visc){
+//  for(dlong e=0;e<Nelements;e++; @outer(0)){  // for all elements  
+//    for(int fld=0; fld<p_dNfields; fld++){
+    
+//     const dfloat scale = viscScale[e]; // (h/N) 
+//     const dfloat ramp  = viscActivation[e*p_dNfields + fld];
 
+//      for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
+//       const dlong id     = e*p_Np*p_dNfields + fld*p_Np + n; 
+//       visc[id]           = alpha*scale*ramp; // alpha* (h/N)* Activation Function 
+//       }
+
+//     }
+//   }
+// }
+
+@kernel void projectViscosityTri2D(const dlong Nelements,
+                                    @restrict const  dfloat *  pM,
+                                    @restrict const  dfloat *  vq,
+                                    @restrict        dfloat *  q){
+
+  for(dlong e=0;e<Nelements;e++; @outer(0)){  // for all elements
+    @shared dfloat s_q[p_dNfields][p_sNverts];
+
+    for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element    
+      if(n<p_sNverts){    
+        const dlong id = e*p_dNfields*p_sNverts + n;
+        #pragma unroll p_dNfields
+        for(int fld=0; fld<p_dNfields;++fld){
+          s_q[fld][n] = vq[id+fld*p_sNverts];
+        }
+      }
+    }
+
+
+
+    for(int n=0;n<p_Np;++n;@inner(0)){     // for all nodes in this element
+      
+      dfloat r_qM[p_dNfields];
+       #pragma unroll p_dNfields
+       for (int fld=0;fld<p_dNfields;fld++)
+          r_qM[fld] = 0.0;
+
+        #pragma unroll p_sNverts
+        for (int k=0;k<p_sNverts;k++) {
+          const dfloat fmn = pM[n+k*p_Np];
+          for (int fld=0;fld<p_dNfields;fld++){
+             r_qM[fld] += fmn*s_q[fld][k];
+          }        
+        }
+
+        const dlong qbase = e*p_Np*p_dNfields + n;
+        #pragma unroll p_dNfields
+        for (int fld=0;fld<p_dNfields;fld++){
+          q[qbase+fld*p_Np] = r_qM[fld];
+        }
+                  
+      }
+    }
+  }
+
+
+
+
+ @kernel void computeViscosity(const dlong N,
+                               const dfloat alpha,
+                               @restrict const dfloat *viscActivation, 
+                               @restrict const dfloat *viscScale, 
+                               @restrict       dfloat *visc){
+ for(dlong n=0;n<N;++n;@tile(p_blockSize,@outer,@inner)){
+  const dlong e   = n/p_sNverts; 
+  const int vid   = n%p_sNverts; 
+  const dfloat scale = viscScale[e]; // (h/N) 
+
+  for(int fld=0; fld<p_dNfields; fld++){
+    const dlong id     = e*p_sNverts*p_dNfields + fld*p_sNverts + vid; 
+    dfloat ramp  = viscActivation[e*p_dNfields + fld];
+    // ramp = ramp < 1e-4 ? 0: ramp; 
+    visc[n] = alpha*scale*ramp;
+    // visc[n] = (e<=100) ? 0.0005:0; 
     }
   }
 }

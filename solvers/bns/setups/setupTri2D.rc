@@ -2,12 +2,12 @@
 2.0
 
 [DATA FILE]
-data/bnsUniform2D.h
-#data/bnsGaussian2D.h
+#data/bnsUniform2D.h
+data/bnsGaussian2D.h
 
 [MESH FILE]
-../../meshes/boltzmannSquareCylinderPML2D.msh
-#PMLBOX
+#../../meshes/boltzmannSquareCylinderPML2D.msh
+PMLBOX
 
 [MESH DIMENSION]
 2
@@ -64,10 +64,10 @@ SARK4
 0
 
 [FINAL TIME]
-1000
+10
 
 [OUTPUT INTERVAL]
-10
+1
 
 [OUTPUT TO FILE]
 TRUE

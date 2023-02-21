@@ -41,11 +41,11 @@ void stab_t::detectSetupKlockner(){
   qd.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Np*dNfields); 
   o_qd = platform.malloc<dfloat>(qd); 
 
-
-   // Compute Art. Diff. Activation function as well!!!!
-  if(stabType==Stab::ARTDIFF){
-    viscRamp.malloc(mesh.Nelements*dNfields, 0.0); 
-    o_viscRamp = platform.malloc<dfloat>(viscRamp); 
+  // Compute Art. Diff. Activation function as well
+  if(stabType==Stab::ARTDIFF){ // Vertex based to make it continuous
+    // viscActivation.malloc((mesh.Nelements+mesh.totalHaloPairs)*mesh.Nverts*dNfields, 0.0); 
+    viscActivation.malloc((mesh.Nelements+mesh.totalHaloPairs)*dNfields, 0.0); 
+    o_viscActivation = platform.malloc<dfloat>(viscActivation); 
   }
 
   memory<dfloat> invV, invVT;
@@ -85,6 +85,7 @@ void stab_t::detectSetupKlockner(){
 
    props["defines/" "p_dNfields"]= dNfields;
    props["defines/" "p_sNfields"]= sNfields;
+   props["defines/" "p_sNverts"] = mesh.Nverts;  
    props["defines/" "p_Nq"]= mesh.N+1;
 
   if(stabType==Stab::SUBCELL){
@@ -119,6 +120,7 @@ void stab_t::detectSetupKlockner(){
   detectKernel  = platform.buildKernel(fileName, kernelName, props);
 
   if(stabType==Stab::SUBCELL){
+    fileName      = oklFilePrefix + "subcell" + oklFileSuffix;
     kernelName    = "detectFindNeigh" + suffix;
     findNeighKernel =  platform.buildKernel(fileName, kernelName, props);
   }
@@ -128,7 +130,12 @@ void stab_t::detectSetupKlockner(){
   copyFloatKernel = platform.buildKernel(fileName, kernelName, props);  
 
   kernelName      = "copyInt";
-  copyIntKernel = platform.buildKernel(fileName, kernelName, props); 
+  copyIntKernel   = platform.buildKernel(fileName, kernelName, props); 
+
+  kernelName         = "extractField";
+  extractFieldKernel = platform.buildKernel(fileName, kernelName, props); 
+
+
 }
 
 
@@ -138,7 +145,12 @@ void stab_t::detectApplyKlockner(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>
 if(solverType==Stab::HJS){
   o_qd.copyFrom(o_Q); 
 }else if(solverType==Stab::CNS){
-  o_qd.copyFrom(o_Q); // will be changed later! AK 
+  // Use Density field for now AK:
+  const int field_id = 0; 
+  extractFieldKernel(mesh.Nelements,
+                     field_id, 
+                     o_Q,
+                     o_qd); 
 }
 
 if(stabType==Stab::ARTDIFF){
@@ -151,7 +163,7 @@ if(stabType==Stab::ARTDIFF){
                o_LSF, 
                o_BLD, 
                o_qd, 
-               o_viscRamp, 
+               o_viscActivation,
                o_eList); 
   
   }else if(stabType==Stab::SUBCELL){
@@ -198,16 +210,16 @@ if(stabType==Stab::ARTDIFF){
               o_eList); 
 
 }else{
-  // Detect elements for each fields i.e. 2
-  detectKernel(mesh.Nelements, 
-               mesh.o_vgeo, 
-               o_modeMap, 
-               mesh.o_MM, 
-               o_invV, 
-               o_LSF, 
-               o_BLD, 
-               o_qd, 
-               o_eList); 
+  // // Detect elements for each fields i.e. 2
+  // detectKernel(mesh.Nelements, 
+  //              mesh.o_vgeo, 
+  //              o_modeMap, 
+  //              mesh.o_MM, 
+  //              o_invV, 
+  //              o_LSF, 
+  //              o_BLD, 
+  //              o_qd, 
+  //              o_eList); 
 }
 
 
