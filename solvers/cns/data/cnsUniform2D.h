@@ -31,7 +31,8 @@ SOFTWARE.
 
 //P = RHO * U^2/(Ma^2*gamma)
 // define p_PBAR 4.4642857
-#define p_PBAR 0.496031746031746
+// #define p_PBAR 0.197863078749505
+#define p_PBAR 0.178571428571429
 
 // Ma=0.1
 // #define p_PBAR 71.4286

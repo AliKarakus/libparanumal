@@ -79,7 +79,7 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
 
 {
 
-  // if(T>0.5){
+  if(T>0.1){
 
   stab.detectApply(o_Q, o_RHS, T); 
 
@@ -112,7 +112,15 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
    // stab.Report(T,T);
 // 
    // Report(T, T);
-   // }
+   }else{
+        // set time step
+      dfloat hmin = mesh.MinCharacteristicLength();
+      const dfloat visc = 0.5* hmin/mesh.N; 
+      platform.linAlg().set(mesh.Nelements*mesh.Np, visc, stab.o_visc);
+
+
+   }
+
   }
 
   // Now compute the viscous flux : Fv = mu* grad{q} 

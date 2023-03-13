@@ -33,7 +33,7 @@ data/cnsUniform2D.h
 -1
 
 [POLYNOMIAL DEGREE]
-4
+5
 
 [THREAD MODEL]
 CUDA
@@ -54,11 +54,11 @@ TRUE
 [MACH NUMBER]
 #0.4
 #0.8
-1.2
+2.0
 
 # if nondimensional is TRUE
 [REYNOLDS NUMBER]
-5000
+100000
 
 [PRANDTL NUMBER]
 0.72
