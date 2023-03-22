@@ -105,11 +105,12 @@ void stab_t::detectSetupPersson(){
    props["defines/" "p_sNverts"] = mesh.Nverts;  
    props["defines/" "p_Nq"]= mesh.N+1;
 
-    if(stabType==Stab::SUBCELL){
-     props["defines/" "s_DGDG_TYPE"] = int(0); 
-     props["defines/" "s_FVFV_TYPE"] = int(1); 
-     props["defines/" "s_DGFV_TYPE"] = int(2); 
-  }
+    // Needed for Subcell Only
+    if(stabType==Stab::SUBCELL || stabType==Stab::LIMITER){
+       props["defines/" "s_DGDG_TYPE"] = int(0); 
+       props["defines/" "s_FVFV_TYPE"] = int(1); 
+       props["defines/" "s_DGFV_TYPE"] = int(2); 
+    }
 
    // set kernel name suffix
     std::string suffix;
@@ -135,7 +136,7 @@ void stab_t::detectSetupPersson(){
   }
   detectKernel  = platform.buildKernel(fileName, kernelName, props);
 
-  if(stabType==Stab::SUBCELL){
+  if(stabType==Stab::SUBCELL || stabType==Stab::LIMITER){
     fileName      = oklFilePrefix + "subcell" + oklFileSuffix;
     kernelName    = "detectFindNeigh" + suffix;
     findNeighKernel =  platform.buildKernel(fileName, kernelName, props);
@@ -178,18 +179,27 @@ if(stabType==Stab::ARTDIFF){
                o_eList);
 
 
- }else if(stabType==Stab::SUBCELL){
+   }else if(stabType==Stab::SUBCELL || stabType==Stab::LIMITER){
    // Detect elements for each fields i.e. 2
   detectKernel(mesh.Nelements, 
                mesh.o_vgeo, 
                mesh.o_MM, 
                o_projectNm1, 
                o_qd,
-               o_eList); 
+               o_efList); 
 
+  // Communicate as we need neighbor info
+  mesh.halo.Exchange(o_efList, dNfields); 
+
+  // Correct Neighbor Info
   findNeighKernel(mesh.Nelements, 
                   mesh.o_vmapP, 
-                 o_eList); 
+                  o_efList); 
+
+  // Return to int storage
+  copyIntKernel((mesh.Nelements+mesh.totalHaloPairs)*dNfields, 
+              o_efList, 
+              o_eList); 
 }else{
     // Detect elements for each fields i.e. 2
     detectKernel(mesh.Nelements, 

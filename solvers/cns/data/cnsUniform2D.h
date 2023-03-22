@@ -26,13 +26,23 @@ SOFTWARE.
 
 //Mean flow
 #define p_RBAR 1.0
-#define p_UBAR 0.990268069
-#define p_VBAR 0.139173101
+
+// #define p_UBAR 0.990268069
+// #define p_VBAR 0.139173101
+// #define p_RBAR 1.0
+
+// #define p_UBAR 0.939692620785908
+// #define p_VBAR 0.342020143325669
+
+
+
+#define p_UBAR 1.0
+#define p_VBAR 0.0
+#define p_PBAR 0.317460317460317
 
 //P = RHO * U^2/(Ma^2*gamma)
-// define p_PBAR 4.4642857
 // #define p_PBAR 0.197863078749505
-#define p_PBAR 0.178571428571429
+// #define p_PBAR 0.178571428571429
 
 // Ma=0.1
 // #define p_PBAR 71.4286

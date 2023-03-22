@@ -115,7 +115,7 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
    }else{
         // set time step
       dfloat hmin = mesh.MinCharacteristicLength();
-      const dfloat visc = 0.5* hmin/mesh.N; 
+      const dfloat visc = 1.0* hmin/mesh.N; 
       platform.linAlg().set(mesh.Nelements*mesh.Np, visc, stab.o_visc);
 
 

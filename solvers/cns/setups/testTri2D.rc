@@ -12,7 +12,8 @@ data/cnsUniform2D.h
 #../../meshes/cnsFFS.msh
 #../../meshes/testNACA12_v3.msh
 #../../meshes/testNACA12_v5.msh
-../../meshes/cnsNACA12_v5.msh
+#../../meshes/cnsNACA12_v5.msh
+../../meshes/cnsTriangle.msh
 
 [MESH DIMENSION]
 2
@@ -54,11 +55,11 @@ TRUE
 [MACH NUMBER]
 #0.4
 #0.8
-2.0
+1.5
 
 # if nondimensional is TRUE
 [REYNOLDS NUMBER]
-100000
+1000000
 
 [PRANDTL NUMBER]
 0.72

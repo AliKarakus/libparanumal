@@ -483,152 +483,6 @@
   }
 }
 
-// 
-@kernel void detectPerssonTri2D(const dlong Nelements,
-				    @restrict const dfloat* vgeo,
-				    @restrict const dfloat * MM,
-				    @restrict const dfloat * projectMn1,
-				    @restrict const dfloat * Q, 
-				    @restrict       dlong *  ElementList){
-#define p_Nel 1
-
-
-#define reduce(s_L2, s_L2T, NT)				\
-  if(NT<p_Nq){						\
-    for(int es=0;es<p_Nel;++es;@inner(1)){		\
-      for(int n=0; n<p_Nq; n++; @inner(0)){		\
-	if(n<NT && n+NT<p_Nq){				\
-	  for(int fld=0; fld<p_dNfields; fld++){	\
-	    s_L2[es][fld][n]  += s_L2[es][fld][n+NT];	\
-	    s_L2T[es][fld][n] += s_L2T[es][fld][n+NT];	\
-	  }						\
-	}						\
-      }							\
-    }							\
-  }
-
-  for(dlong eo=0;eo<Nelements;eo+=p_Nel;@outer(0)){
-
-    @shared dfloat s_Q[p_Nel][p_dNfields][p_Np];
-    @shared dfloat s_QT[p_Nel][p_dNfields][p_Np];
-
-    @shared dfloat s_L2Q[p_Nel][p_dNfields][p_Np];
-    @shared dfloat s_L2QT[p_Nel][p_dNfields][p_Np];
-
-    // prefetch global variables
-    for(int es=0;es<p_Nel;++es;@inner(1)){
-      for(int n=0; n<p_Nq; n++; @inner(0)){
-				dlong e = eo+es;
-  		
-				int m = n + es*p_Nq;
-				while(m<p_Np*p_Nel && eo*p_Np+m<Nelements*p_Np){
-	  			
-	  			const dlong id = m+eo*p_Np*p_dNfields;
-			  
-	  			for(int fld=0; fld<p_dNfields; fld++){ 
-	    			s_Q[0][fld][m]  = Q[id + fld*p_Np];
-	  			}      
-	  			m += p_Nel*p_Nq;
-				}
-      }
-    }
-
-
-    // get modal coefficients and compute L2 norm
-    for(int es=0;es<p_Nel;++es;@inner(1)){
-      for(int n=0; n<p_Nq; n++; @inner(0)){
-
-				dlong e = eo+es;
-			dfloat qt[p_dNfields]; 
-			if(e<Nelements){
-	  		int nn = n;
-
-	  		while(nn<p_Np){
-	    		// dfloat Qhatn[p_Nfields]; 
-	    		for(int fld=0; fld<p_dNfields; fld++){ 
-	      		qt[fld] = 0; 
-	    		}
-
-					#pragma unroll p_Np
-		    	for(int m=0; m<p_Np;m++){
-		      	const dfloat pm = projectMn1[nn+m*p_Np]; 
-		      	for(int fld=0; fld<p_dNfields; fld++){ 
-							qt[fld] += pm*s_Q[es][fld][m];
-	      		}
-	    		}
-
-	    	for(int fld=0; fld<p_dNfields; fld++){ 	    
-	    		s_QT[es][fld][nn] = s_Q[es][fld][nn] - qt[fld]; 
-	      }
-	    nn += p_Nq;
-	  }
-
-      }
-    }
-  }
-
-
-   // Compute trancuated solution
-    for(int es=0;es<p_Nel;++es;@inner(1)){
-      for(int n=0; n<p_Nq;++n; @inner(0)){
-	dlong e = eo+es;
-	if(e<Nelements){
-	  int nn = n;
-	  while(nn<p_Np){
-	    dfloat l2q[p_dNfields]; 
-	    dfloat l2qt[p_dNfields];
-
-	    for(int fld=0; fld<p_dNfields; fld++){ 	    
-	    	l2q[fld] = 0.; 
-	    	l2qt[fld] = 0.; 
-	    }
-
-#pragma unroll p_Np
-	    for(int m=0; m<p_Np;m++){
-	      const dfloat mm = MM[nn+m*p_Np]; 
-	      for(int fld=0; fld<p_dNfields; fld++){ 
-	      	l2q[fld]  += mm*s_Q[es][fld][m];
-	      	l2qt[fld] += mm*s_QT[es][fld][m];
-	    	}
-	    }         
-	    const dfloat J = vgeo[e*p_Nvgeo + p_JID];
-	    for(int fld=0; fld<p_dNfields; fld++){ 
-	    	s_L2Q[es][fld][nn]  = s_Q[es][fld][nn]  * J * l2q[fld]; 
-	    	s_L2QT[es][fld][nn] = s_QT[es][fld][nn] * J * l2qt[fld]; // trancuated ( q - qt)
-	  	}
-	    nn +=p_Nq;  
-	  }
-	}
-      }
-    }
-
-    // reduce02(s_L2, 128);
-    reduce(s_L2Q, s_L2QT, 64);
-    reduce(s_L2Q, s_L2QT, 16);
-    reduce(s_L2Q, s_L2QT,  8);
-    reduce(s_L2Q, s_L2QT,  4);
-    reduce(s_L2Q, s_L2QT,  2);
-    reduce(s_L2Q, s_L2QT,  1);
-
-     for(int es=0;es<p_Nel;++es;@inner(1)){
-      for(int n=0; n<p_Nq; n++; @inner(0)){
-	dlong e = eo+es;
-	if(e<Nelements){
-	  if(n<p_dNfields){
-	    			const dfloat sk = 0.5*log10f((float)(s_L2QT[es][n][0]/s_L2Q[es][n][0]));
-	    			const dfloat N = p_N; 
-	    			// log (1/N^4)
-	    			const dfloat s0  = -4.f*log10f( (float) (N) );	    
-	    			const dfloat kappa = 1.0; 
-	          ElementList[e*p_dNfields + n] = (sk < (s0-kappa))  ? 0.0: 1.0; 
-	          // ElementList[e*p_dNfields + n] = 1; 
-	  			}
-				}
-      }
-    }
-
-  }
-}
 
 
 
@@ -791,6 +645,158 @@
 
   }
 }
+
+
+// 
+@kernel void detectPerssonTri2D(const dlong Nelements,
+				    @restrict const dfloat* vgeo,
+				    @restrict const dfloat * MM,
+				    @restrict const dfloat * projectMn1,
+				    @restrict const dfloat * Q, 
+				    @restrict       dfloat *  ElementList){
+#define p_Nel 1
+
+
+#define reduce(s_L2, s_L2T, NT)				\
+  if(NT<p_Nq){						\
+    for(int es=0;es<p_Nel;++es;@inner(1)){		\
+      for(int n=0; n<p_Nq; n++; @inner(0)){		\
+	if(n<NT && n+NT<p_Nq){				\
+	  for(int fld=0; fld<p_dNfields; fld++){	\
+	    s_L2[es][fld][n]  += s_L2[es][fld][n+NT];	\
+	    s_L2T[es][fld][n] += s_L2T[es][fld][n+NT];	\
+	  }						\
+	}						\
+      }							\
+    }							\
+  }
+
+  for(dlong eo=0;eo<Nelements;eo+=p_Nel;@outer(0)){
+
+    @shared dfloat s_Q[p_Nel][p_dNfields][p_Np];
+    @shared dfloat s_QT[p_Nel][p_dNfields][p_Np];
+
+    @shared dfloat s_L2Q[p_Nel][p_dNfields][p_Np];
+    @shared dfloat s_L2QT[p_Nel][p_dNfields][p_Np];
+
+    // prefetch global variables
+    for(int es=0;es<p_Nel;++es;@inner(1)){
+      for(int n=0; n<p_Nq; n++; @inner(0)){
+				dlong e = eo+es;
+  		
+				int m = n + es*p_Nq;
+				while(m<p_Np*p_Nel && eo*p_Np+m<Nelements*p_Np){
+	  			
+	  			const dlong id = m+eo*p_Np*p_dNfields;
+			  
+	  			for(int fld=0; fld<p_dNfields; fld++){ 
+	    			s_Q[0][fld][m]  = Q[id + fld*p_Np];
+	  			}      
+	  			m += p_Nel*p_Nq;
+				}
+      }
+    }
+
+
+    // get modal coefficients and compute L2 norm
+    for(int es=0;es<p_Nel;++es;@inner(1)){
+      for(int n=0; n<p_Nq; n++; @inner(0)){
+
+				dlong e = eo+es;
+			dfloat qt[p_dNfields]; 
+			if(e<Nelements){
+	  		int nn = n;
+
+	  		while(nn<p_Np){
+	    		// dfloat Qhatn[p_Nfields]; 
+	    		for(int fld=0; fld<p_dNfields; fld++){ 
+	      		qt[fld] = 0; 
+	    		}
+
+					#pragma unroll p_Np
+		    	for(int m=0; m<p_Np;m++){
+		      	const dfloat pm = projectMn1[nn+m*p_Np]; 
+		      	for(int fld=0; fld<p_dNfields; fld++){ 
+							qt[fld] += pm*s_Q[es][fld][m];
+	      		}
+	    		}
+
+	    	for(int fld=0; fld<p_dNfields; fld++){ 	    
+	    		s_QT[es][fld][nn] = s_Q[es][fld][nn] - qt[fld]; 
+	      }
+	    nn += p_Nq;
+	  }
+
+      }
+    }
+  }
+
+
+   // Compute trancuated solution
+    for(int es=0;es<p_Nel;++es;@inner(1)){
+      for(int n=0; n<p_Nq;++n; @inner(0)){
+	dlong e = eo+es;
+	if(e<Nelements){
+	  int nn = n;
+	  while(nn<p_Np){
+	    dfloat l2q[p_dNfields]; 
+	    dfloat l2qt[p_dNfields];
+
+	    for(int fld=0; fld<p_dNfields; fld++){ 	    
+	    	l2q[fld] = 0.; 
+	    	l2qt[fld] = 0.; 
+	    }
+
+#pragma unroll p_Np
+	    for(int m=0; m<p_Np;m++){
+	      const dfloat mm = MM[nn+m*p_Np]; 
+	      for(int fld=0; fld<p_dNfields; fld++){ 
+	      	l2q[fld]  += mm*s_Q[es][fld][m];
+	      	l2qt[fld] += mm*s_QT[es][fld][m];
+	    	}
+	    }         
+	    const dfloat J = vgeo[e*p_Nvgeo + p_JID];
+	    for(int fld=0; fld<p_dNfields; fld++){ 
+	    	s_L2Q[es][fld][nn]  = s_Q[es][fld][nn]  * J * l2q[fld]; 
+	    	s_L2QT[es][fld][nn] = s_QT[es][fld][nn] * J * l2qt[fld]; // trancuated ( q - qt)
+	  	}
+	    nn +=p_Nq;  
+	  }
+	}
+      }
+    }
+
+    // reduce02(s_L2, 128);
+    reduce(s_L2Q, s_L2QT, 64);
+    reduce(s_L2Q, s_L2QT, 16);
+    reduce(s_L2Q, s_L2QT,  8);
+    reduce(s_L2Q, s_L2QT,  4);
+    reduce(s_L2Q, s_L2QT,  2);
+    reduce(s_L2Q, s_L2QT,  1);
+
+     for(int es=0;es<p_Nel;++es;@inner(1)){
+      for(int n=0; n<p_Nq; n++; @inner(0)){
+	dlong e = eo+es;
+	if(e<Nelements){
+	  if(n<p_dNfields){
+	    			const dfloat sk = 0.5*log10f((float)(s_L2QT[es][n][0]/s_L2Q[es][n][0]));
+	    			const dfloat N = p_N; 
+	    			// log (1/N^4)
+	    			const dfloat s0  = -4.f*log10f( (float) (N) );	    
+	    			const dfloat kappa = 1.0; 
+	          ElementList[e*p_dNfields + n] = (sk < (s0-kappa))  ? 0.0: 1.0; 
+	          // ElementList[e*p_dNfields + n] = 1; 
+	  			}
+				}
+      }
+    }
+
+  }
+}
+
+
+
+
 
 
 // @kernel void detectFindNeighTri2D(const dlong Nelements,

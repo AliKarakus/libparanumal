@@ -216,12 +216,6 @@ class stab_t {
 
   kernel_t findNeighKernel; 
 
-
-  // kernel_t primitiveToConservativeKernel;
-  // kernel_t conservativeToPrimitiveKernel;
-
-  // kernel_t MassMatrixKernel;
-
   stab_t() = default;
   stab_t(platform_t& _platform, mesh_t &_mesh, stabSettings_t& _settings) {
     Setup(_platform, _mesh, _settings);
@@ -260,8 +254,8 @@ class stab_t {
         stabSetupFilter();
         break;
       case Stab::LIMITER:
-         // StabilizerSetupHJSLimiter();
-         LIBP_FORCE_ABORT("Limiter is not implemented yet");
+         // StabilizerSetupLimiter();
+         // LIBP_FORCE_ABORT("Limiter is not implemented yet");
         break;
       case Stab::ARTDIFF:
         stabSetupArtdiff();
@@ -322,7 +316,7 @@ class stab_t {
    dfloat ElementViscosityScaleHex3D(dlong e);
 
 
-   // *********************ARTIFICIAL DIFFUSION RELATED*****************************//
+   // *********************SUBCELL RELATED*****************************//
    void stabSetupSubcell(); 
    void stabSetupSubcellTri2D(); 
 
@@ -339,6 +333,9 @@ class stab_t {
 
    void CellEquispacedEToVTri2D(const int _N, memory<int>& mEToV);
    void CellWarpBlendEToVTri2D(const int _N, memory<int>& mEToV);
+
+  // *********************LIMITER RELATED*****************************//
+
 
    // void GeometricFactorsQuad2D(); 
    // void GeometricFactorsHex3D(); 
