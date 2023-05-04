@@ -109,6 +109,16 @@ public:
 
   deviceMemory<dfloat> o_Mq;
 
+
+  // Limiter kernels
+  // kernel_t limiterCellAverageKernel; 
+  kernel_t limiterCellVariableKernel; 
+  kernel_t limiterUnlimitedGradientKernel;
+  kernel_t limiterReconstructKernel;
+  kernel_t limiterVertexValuesKernel;
+  kernel_t amxNKernel; 
+
+
   kernel_t volumeKernel;
   kernel_t surfaceKernel;
   kernel_t cubatureVolumeKernel;
@@ -144,6 +154,7 @@ public:
 
   void rhsNoStab(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
   void rhsArtDiff(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
+  void rhsLimiter(deviceMemory<dfloat>& o_q, deviceMemory<dfloat>& o_rhs, const dfloat time);
 
   dfloat MaxWaveSpeed(deviceMemory<dfloat>& o_Q, const dfloat T);
 

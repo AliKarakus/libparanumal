@@ -28,31 +28,31 @@ SOFTWARE.
 
 void cns_t::Report(dfloat time, int tstep){
 
-
+#if 1
   {
 
   stab.detectApply(o_q, o_q, time); 
 
-  // const dfloat alpha = 0.0005; 
-  const dfloat alpha = 1.0; 
-  stab.computeViscosityKernel(mesh.Nelements*mesh.Nverts, 
-                             alpha, 
-                             stab.o_viscActivation,
-                             stab.o_viscScale,
-                             stab.o_vertexVisc); 
+  // // const dfloat alpha = 0.0005; 
+  // const dfloat alpha = 1.0; 
+  // stab.computeViscosityKernel(mesh.Nelements*mesh.Nverts, 
+  //                            alpha, 
+  //                            stab.o_viscActivation,
+  //                            stab.o_viscScale,
+  //                            stab.o_vertexVisc); 
   
-  // // stab.Report(time,tstep);
-  stab.ogs.GatherScatter(stab.o_vertexVisc, 1, ogs::Add, ogs::Sym); 
-  platform.linAlg().amx(mesh.Nelements*mesh.Nverts, 1, stab.o_weight, stab.o_vertexVisc); 
+  // // // stab.Report(time,tstep);
+  // stab.ogs.GatherScatter(stab.o_vertexVisc, 1, ogs::Add, ogs::Sym); 
+  // platform.linAlg().amx(mesh.Nelements*mesh.Nverts, 1, stab.o_weight, stab.o_vertexVisc); 
 
-  stab.projectViscosityKernel(mesh.Nelements, 
-                             stab.o_projectVisc,
-                             stab.o_vertexVisc,
-                             stab.o_visc); 
+  // stab.projectViscosityKernel(mesh.Nelements, 
+  //                            stab.o_projectVisc,
+  //                            stab.o_vertexVisc,
+  //                            stab.o_visc); 
   stab.Report(time,tstep);
   }
 
-  // stab.Report(time,time);
+ #endif
 
   
 
@@ -75,8 +75,22 @@ void cns_t::Report(dfloat time, int tstep){
     // copy data back to host
     o_q.copyTo(q);
 
-    
-   //  {
+    o_Vort.copyTo(Vort);
+
+    // output field files
+    std::string name;
+    settings.getSetting("OUTPUT FILE NAME", name);
+    char fname[BUFSIZ];
+    sprintf(fname, "%s_%04d_%04d.vtu", name.c_str(), mesh.rank, frame++);
+
+    PlotFields(q, Vort, std::string(fname));
+  }
+}
+
+
+
+
+//  {
    //  char fname[BUFSIZ];
    //  sprintf(fname, "pressure_%d.dat", frame);
    //  std::string filename = std::string(fname); 
@@ -116,19 +130,3 @@ void cns_t::Report(dfloat time, int tstep){
    //   }
    //     fclose(fp);
    // }
-
-
-
-
-
-    o_Vort.copyTo(Vort);
-
-    // output field files
-    std::string name;
-    settings.getSetting("OUTPUT FILE NAME", name);
-    char fname[BUFSIZ];
-    sprintf(fname, "%s_%04d_%04d.vtu", name.c_str(), mesh.rank, frame++);
-
-    PlotFields(q, Vort, std::string(fname));
-  }
-}

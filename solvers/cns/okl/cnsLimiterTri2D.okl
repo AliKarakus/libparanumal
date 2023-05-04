@@ -1,0 +1,1808 @@
+/*
+
+The MIT License (MIT)
+
+Copyright (c) 2017-2022 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+// Read cell center values
+void readCellAverages(const dlong e, const dfloat *svgeo, const dfloat *qc, 
+                       dfloat *xc, dfloat *yc, dfloat *sa, 
+                       dfloat *r, dfloat *u, dfloat *v,  dfloat *p){
+  // Load cell center coordinates
+  dfloat rxc = svgeo[e*s_Nvgeo + s_CXID]; 
+  dfloat ryc = svgeo[e*s_Nvgeo + s_CYID]; 
+  dfloat rsa = svgeo[e*s_Nvgeo + s_SAID]; 
+// load cell averages
+  dfloat rr =qc[e*p_Nfields +0];
+  dfloat ru =qc[e*p_Nfields +1];
+  dfloat rv =qc[e*p_Nfields +2];
+  dfloat rp =qc[e*p_Nfields +3];
+
+*xc = rxc;  *yc = ryc;  *sa = rsa; 
+*r  = rr; *u  = ru; *v  = rv; *p  = rp;
+}
+
+
+
+// Read cell center values
+void applyCellBC(const dlong e, const dfloat time, const int f, const int bctype, const dfloat *sgeo,
+                 const dfloat  gamma, const dfloat  R, const dfloat CP, const dfloat CV, const dfloat mu, 
+                 dfloat  xc0, dfloat  yc0,  dfloat sa0, dfloat  rc0, dfloat uc0, dfloat  vc0,  dfloat pc0,
+                 dfloat *xc, dfloat *yc,  dfloat *rc, dfloat *uc, dfloat *vc,  dfloat *pc){
+// Fake gradients in bc
+const dfloat dudxM=0., dudyM=0., dvdxM=0., dvdyM=0.; 
+      dfloat dudxP=0., dudyP=0., dvdxP=0., dvdyP=0.; 
+
+
+const dfloat nx = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_NXID]; 
+const dfloat ny = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_NYID];
+const dfloat sj = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_SJID];
+const dfloat hp = sa0 /sj; 
+dfloat xb   = xc0 + 2.0*nx*hp; 
+dfloat yb   = yc0 + 2.0*ny*hp; 
+
+// Initialze BC's
+dfloat rb=rc0, ub=uc0, vb=vc0, pb=pc0;  
+
+cnsBoundaryConditions2D(bctype, gamma, R, CP, CV, mu, \
+                                  time, xb, yb, nx, ny, \
+                                  rc0, uc0, vc0, pc0, dudxM, dudyM, dvdxM, dvdyM,
+                                  &rb, &ub, &vb, &pb, &dudxP, &dudyP, &dvdxP, &dvdyP);
+// Assign values
+*rc = rb; *uc = ub; *vc= vb; 
+*pc = pb; *xc = xb; *yc = yb; 
+}
+
+
+
+@kernel void cnsLimiterCellVariableTri2D(const dlong N, 
+                                     @restrict const dlong *eList, 
+                                     @restrict const  dlong  *  vmapM,
+                                     @restrict const  dlong  *  vmapP,
+                                     @restrict const  dfloat * pCoeff,
+                                     @restrict const dfloat *projectC0,
+                                     @restrict const dfloat *q,
+                                     @restrict       dfloat *qc,
+                                     @restrict       dfloat *qv){
+for(dlong e=0; e<N; ++e; @tile(p_blockSize, @outer, @inner)){
+  const dlong etype = eList[e]; 
+  // Troubled elelemnts and their neighbors
+  // if(etype > 0){
+    
+    const dfloat gamma = pCoeff[p_GMID]; // gamma
+    
+    // First find the cell center values
+    dfloat rrc=0.0, ruc=0.0 , rvc=0.0, rec= 0.0; 
+    for(int n=0; n<p_Np; n++){
+      const dlong qbase = e*p_Np*p_Nfields + n;
+      const dfloat pc0 = projectC0[n]; 
+      rrc  +=pc0*q[qbase+0*p_Np];
+      ruc  +=pc0*q[qbase+1*p_Np];
+      rvc  +=pc0*q[qbase+2*p_Np];
+      rec  +=pc0*q[qbase+3*p_Np];
+    }
+    // Hold conservative fields: AK
+    qc[e*p_Nfields +0] = rrc; 
+    qc[e*p_Nfields +1] = ruc; 
+    qc[e*p_Nfields +2] = rvc; 
+    qc[e*p_Nfields +3] = rec; 
+
+    // Get averages from 
+    int vnodes[6]; 
+    vnodes[0] = 0;         vnodes[1] = p_Nfp-1; 
+    vnodes[2] = p_Nfp;     vnodes[3] = 2*p_Nfp-1; 
+    vnodes[4] = 3*p_Nfp-1; vnodes[5] = 2*p_Nfp; 
+
+    const dlong id  = e*p_Nfp*p_Nfaces;
+    // Read vertex values for each face, average and return to primitives
+    const dlong vbase = e*s_NfacesNverts*p_Nfields; 
+    for(int n= 0; n<s_NfacesNverts; n++){
+      int vn = vnodes[n]; 
+      const dlong idM = vmapM[id+vn]; 
+      const dlong idP = vmapP[id+vn]; 
+       // load traces
+      const dlong eM = e;         const dlong eP = idP/p_Np;
+      const int vidM = idM%p_Np;  const int vidP = idP%p_Np;
+
+      const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+      const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+      // if(e==309){
+      //   printf("eM = %d eP = %d n = %d idM = %d idP = %d vidM = %d vidP = %d qbaseM= %d qbaseP= %d\n", eM, eP, s_NfacesNverts, idM, idP,  vidM, vidP, qbaseM, qbaseP);
+      // }
+
+      const dfloat rrM = q[qbaseM+0*p_Np];
+      const dfloat ruM = q[qbaseM+1*p_Np];
+      const dfloat rvM = q[qbaseM+2*p_Np];
+      const dfloat rEM = q[qbaseM+3*p_Np];
+
+      const dfloat rrP = q[qbaseP+0*p_Np];
+      const dfloat ruP = q[qbaseP+1*p_Np];
+      const dfloat rvP = q[qbaseP+2*p_Np];
+      const dfloat rEP = q[qbaseP+3*p_Np];
+
+      // Average conservative fields 
+      const dfloat rr = 0.5*(rrM + rrP); 
+      const dfloat uv = 0.5*(ruM + ruP)/rr; 
+      const dfloat vv = 0.5*(rvM + rvP)/rr; 
+      const dfloat pv = (gamma-1.0)*(0.5*(rEM+rEP)-0.5*rr*(uv*uv+vv*vv));
+
+      // Hold primitive variables 
+      qv[vbase + n + 0*s_NfacesNverts] = rr; 
+      qv[vbase + n + 1*s_NfacesNverts] = uv; 
+      qv[vbase + n + 2*s_NfacesNverts] = vv; 
+      qv[vbase + n + 3*s_NfacesNverts] = pv; 
+
+      // if(e==102){
+      //   printf("%d %d %.4e %.4e %.4e %.4e \n", e, n, rr, uv, vv, pv); 
+
+      // }
+    }
+}
+}
+
+
+
+@kernel void cnsLimiterUnlimitedGradientTri2D(const dlong N, 
+                                             @restrict const dlong *eList, 
+                                             @restrict const int *EToE, 
+                                             @restrict const int *EToB, 
+                                             @restrict const int *vertexNodes, 
+                                             @restrict const dfloat *sgeo, 
+                                             @restrict const dfloat *svgeo, 
+                                             @restrict const dfloat *x, 
+                                             @restrict const dfloat *y, 
+                                             @restrict const  dfloat * pCoeff,
+                                             const dfloat time, 
+                                             @restrict const dfloat *qc,
+                                             @restrict const dfloat *qv,
+                                             @restrict       dfloat *dqf,
+                                             @restrict       dfloat *dq){
+for(dlong e0=0; e0<N; ++e0; @tile(p_blockSize, @outer, @inner)){
+  const dlong etype = eList[e0]; 
+  // Troubled elelemnts and their neighbors
+  // if(etype > 0){
+    const dfloat gamma  = pCoeff[p_GMID]; 
+    const dfloat R      = pCoeff[p_RRID]; 
+    const dfloat CP     = pCoeff[p_CPID]; 
+    const dfloat CV     = pCoeff[p_CVID]; 
+    const dfloat mu     = pCoeff[p_MUID]; // bulk viscosity
+
+    const int e1 = EToE[e0*p_Nfaces + 0];      
+    const int e2 = EToE[e0*p_Nfaces + 1];      
+    const int e3 = EToE[e0*p_Nfaces + 2]; 
+
+    // apply boundary condition
+    const int bc1 = EToB[e0*p_Nfaces+ 0];
+    const int bc2 = EToB[e0*p_Nfaces+ 1];
+    const int bc3 = EToB[e0*p_Nfaces+ 2];
+
+    // load cell averages: conservative
+    dfloat rc0, ruc0, rvc0, ec0, xc0, yc0, sa0; 
+    dfloat rc1, ruc1, rvc1, ec1, xc1, yc1, sa1; 
+    dfloat rc2, ruc2, rvc2, ec2, xc2, yc2, sa2;
+    dfloat rc3, ruc3, rvc3, ec3, xc3, yc3, sa3;
+    //
+    readCellAverages(e0, svgeo, qc, &xc0, &yc0, &sa0, &rc0, &ruc0, &rvc0, &ec0); 
+    readCellAverages(e1, svgeo, qc, &xc1, &yc1, &sa1, &rc1, &ruc1, &rvc1, &ec1);      
+    readCellAverages(e2, svgeo, qc, &xc2, &yc2, &sa2, &rc2, &ruc2, &rvc2, &ec2);    
+    readCellAverages(e3, svgeo, qc, &xc3, &yc3, &sa3, &rc3, &ruc3, &rvc3, &ec3);  
+
+    // Convert to primitive conservative
+    dfloat uc0, vc0, pc0; 
+    dfloat uc1, vc1, pc1; 
+    dfloat uc2, vc2, pc2;
+    dfloat uc3, vc3, pc3;
+
+    // Get primitive variables
+    uc0 = ruc0/rc0;  uc1 = ruc1/rc1;  uc2 = ruc2/rc2; uc3 = ruc3/rc3;    
+    vc0 = rvc0/rc0;  vc1 = rvc1/rc1;  vc2 = rvc2/rc2; vc3 = rvc3/rc3;    
+    //
+    pc0 = (gamma-1.0)*(ec0-0.5*(ruc0*ruc0+rvc0*rvc0)/rc0); 
+    pc1 = (gamma-1.0)*(ec1-0.5*(ruc1*ruc1+rvc1*rvc1)/rc1); 
+    pc2 = (gamma-1.0)*(ec2-0.5*(ruc2*ruc2+rvc2*rvc2)/rc2); 
+    pc3 = (gamma-1.0)*(ec3-0.5*(ruc3*ruc3+rvc3*rvc3)/rc3); 
+
+    // Reflect element and apply bc
+    if(bc1>0){
+      applyCellBC(e0, time, 0, bc1, sgeo, gamma, R, CP, CV, mu, 
+                 xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc1, &yc1, &rc1, &uc1, &vc1, &pc1); 
+      sa1 = sa0; 
+    }
+
+    if(bc2>0){
+       applyCellBC(e0, time, 1, bc2, sgeo, gamma, R, CP, CV, mu, 
+                 xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc2, &yc2, &rc2, &uc2, &vc2, &pc2);
+       sa2 = sa0; 
+    }
+
+    if(bc3>0){
+       applyCellBC(e0, time, 2, bc3, sgeo, gamma, R, CP, CV, mu, 
+                 xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc3, &yc3, &rc3, &uc3, &vc3, &pc3);
+       sa3 = sa0; 
+
+    }
+
+  // Get Vertex solution, note that conservative and C0
+    const int n1 = vertexNodes[0];
+    const int n2 = vertexNodes[1];
+    const int n3 = vertexNodes[2];
+
+    const dfloat xv1 = x[e0*p_Np + n1]; const dfloat yv1 = y[e0*p_Np + n1];
+    const dfloat xv2 = x[e0*p_Np + n2]; const dfloat yv2 = y[e0*p_Np + n2];
+    const dfloat xv3 = x[e0*p_Np + n3]; const dfloat yv3 = y[e0*p_Np + n3];
+    
+    const dlong vbase = e0*s_NfacesNverts*p_Nfields; 
+
+    const dfloat rv1 = qv[vbase + 0 + 0*s_NfacesNverts]; 
+    const dfloat uv1 = qv[vbase + 0 + 1*s_NfacesNverts]; 
+    const dfloat vv1 = qv[vbase + 0 + 2*s_NfacesNverts]; 
+    const dfloat pv1 = qv[vbase + 0 + 3*s_NfacesNverts]; 
+    //
+    const dfloat rv2 = qv[vbase + 1 + 0*s_NfacesNverts]; 
+    const dfloat uv2 = qv[vbase + 1 + 1*s_NfacesNverts]; 
+    const dfloat vv2 = qv[vbase + 1 + 2*s_NfacesNverts]; 
+    const dfloat pv2 = qv[vbase + 1 + 3*s_NfacesNverts]; 
+    // 
+    const dfloat rv3 = qv[vbase + 2 + 0*s_NfacesNverts]; 
+    const dfloat uv3 = qv[vbase + 2 + 1*s_NfacesNverts]; 
+    const dfloat vv3 = qv[vbase + 2 + 2*s_NfacesNverts]; 
+    const dfloat pv3 = qv[vbase + 2 + 3*s_NfacesNverts]; 
+
+    const dfloat rv4 = qv[vbase + 3 + 0*s_NfacesNverts]; 
+    const dfloat uv4 = qv[vbase + 3 + 1*s_NfacesNverts]; 
+    const dfloat vv4 = qv[vbase + 3 + 2*s_NfacesNverts]; 
+    const dfloat pv4 = qv[vbase + 3 + 3*s_NfacesNverts]; 
+
+    //
+    const dfloat rv5 = qv[vbase + 4 + 0*s_NfacesNverts]; 
+    const dfloat uv5 = qv[vbase + 4 + 1*s_NfacesNverts]; 
+    const dfloat vv5 = qv[vbase + 4 + 2*s_NfacesNverts]; 
+    const dfloat pv5 = qv[vbase + 4 + 3*s_NfacesNverts]; 
+
+    const dfloat rv6 = qv[vbase + 5 + 0*s_NfacesNverts]; 
+    const dfloat uv6 = qv[vbase + 5 + 1*s_NfacesNverts]; 
+    const dfloat vv6 = qv[vbase + 5 + 2*s_NfacesNverts]; 
+    const dfloat pv6 = qv[vbase + 5 + 3*s_NfacesNverts]; 
+
+    // Compute Gradients
+    const dfloat A1 = (sa0 + sa1);  // const dfloat iA1 = 1./A1; 
+    const dfloat A2 = (sa0 + sa2);  // const dfloat iA2 = 1./A2; 
+    const dfloat A3 = (sa0 + sa3);  // const dfloat iA3 = 1./A3;
+
+    // Compute face gradients: velocity
+    const dfloat drfdx1 = 0.5*( (rc1-rc0)*(yv2-yv1) + (rv1-rv2)*(yc1 - yc0))/A1;  
+    const dfloat drfdy1 =-0.5*( (rc1-rc0)*(xv2-xv1) + (rv1-rv2)*(xc1 - xc0))/A1;  
+
+    const dfloat drfdx2 = 0.5*( (rc2-rc0)*(yv3-yv2) + (rv3-rv4)*(yc2 - yc0))/A2;  
+    const dfloat drfdy2 =-0.5*( (rc2-rc0)*(xv3-xv2) + (rv3-rv4)*(xc2 - xc0))/A2;  
+
+    const dfloat drfdx3 = 0.5*( (rc3-rc0)*(yv1-yv3) + (rv5-rv6)*(yc3 - yc0))/A3;  
+    const dfloat drfdy3 =-0.5*( (rc3-rc0)*(xv1-xv3) + (rv5-rv6)*(xc3 - xc0))/A3;  
+   
+    // Compute face gradients: velocity
+    const dfloat dufdx1 = 0.5*( (uc1-uc0)*(yv2-yv1) + (uv1-uv2)*(yc1 - yc0))/A1;  
+    const dfloat dufdy1 =-0.5*( (uc1-uc0)*(xv2-xv1) + (uv1-uv2)*(xc1 - xc0))/A1;  
+
+    const dfloat dufdx2 = 0.5*( (uc2-uc0)*(yv3-yv2) + (uv3-uv4)*(yc2 - yc0))/A2;  
+    const dfloat dufdy2 =-0.5*( (uc2-uc0)*(xv3-xv2) + (uv3-uv4)*(xc2 - xc0))/A2;  
+
+    const dfloat dufdx3 = 0.5*( (uc3-uc0)*(yv1-yv3) + (uv5-uv6)*(yc3 - yc0))/A3;  
+    const dfloat dufdy3 =-0.5*( (uc3-uc0)*(xv1-xv3) + (uv5-uv6)*(xc3 - xc0))/A3;  
+    
+     // Compute face gradients: velocity
+    const dfloat dvfdx1 = 0.5*( (vc1-vc0)*(yv2-yv1) + (vv1-vv2)*(yc1 - yc0))/A1;  
+    const dfloat dvfdy1 =-0.5*( (vc1-vc0)*(xv2-xv1) + (vv1-vv2)*(xc1 - xc0))/A1;  
+
+    const dfloat dvfdx2 = 0.5*( (vc2-vc0)*(yv3-yv2) + (vv3-vv4)*(yc2 - yc0))/A2;  
+    const dfloat dvfdy2 =-0.5*( (vc2-vc0)*(xv3-xv2) + (vv3-vv4)*(xc2 - xc0))/A2;  
+
+    const dfloat dvfdx3 = 0.5*( (vc3-vc0)*(yv1-yv3) + (vv5-vv6)*(yc3 - yc0))/A3;  
+    const dfloat dvfdy3 =-0.5*( (vc3-vc0)*(xv1-xv3) + (vv5-vv6)*(xc3 - xc0))/A3;  
+    
+    // Compute face gradients: velocity
+    const dfloat dpfdx1 = 0.5*( (pc1-pc0)*(yv2-yv1) + (pv1-pv2)*(yc1 - yc0))/A1;  
+    const dfloat dpfdy1 =-0.5*( (pc1-pc0)*(xv2-xv1) + (pv1-pv2)*(xc1 - xc0))/A1;  
+
+    const dfloat dpfdx2 = 0.5*( (pc2-pc0)*(yv3-yv2) + (pv3-pv4)*(yc2 - yc0))/A2;  
+    const dfloat dpfdy2 =-0.5*( (pc2-pc0)*(xv3-xv2) + (pv3-pv4)*(xc2 - xc0))/A2;  
+
+    const dfloat dpfdx3 = 0.5*( (pc3-pc0)*(yv1-yv3) + (pv5-pv6)*(yc3 - yc0))/A3;  
+    const dfloat dpfdy3 =-0.5*( (pc3-pc0)*(xv1-xv3) + (pv5-pv6)*(xc3 - xc0))/A3;  
+
+  
+    // Get gradients at cell centers
+    const dfloat drdx0 = (A1*drfdx1 + A2*drfdx2 + A3*drfdx3)/(A1 + A2 + A3); 
+    const dfloat drdy0 = (A1*drfdy1 + A2*drfdy2 + A3*drfdy3)/(A1 + A2 + A3); 
+    //
+    const dfloat dudx0 = (A1*dufdx1 + A2*dufdx2 + A3*dufdx3)/(A1 + A2 + A3); 
+    const dfloat dudy0 = (A1*dufdy1 + A2*dufdy2 + A3*dufdy3)/(A1 + A2 + A3); 
+    //
+    const dfloat dvdx0 = (A1*dvfdx1 + A2*dvfdx2 + A3*dvfdx3)/(A1 + A2 + A3); 
+    const dfloat dvdy0 = (A1*dvfdy1 + A2*dvfdy2 + A3*dvfdy3)/(A1 + A2 + A3); 
+    //
+    const dfloat dpdx0 = (A1*dpfdx1 + A2*dpfdx2 + A3*dpfdx3)/(A1 + A2 + A3); 
+    const dfloat dpdy0 = (A1*dpfdy1 + A2*dpfdy2 + A3*dpfdy3)/(A1 + A2 + A3); 
+
+  // //   // if(e0<400 && e0>300){
+  // //   // if( bc1 == 1 || bc2==1 || bc3==1){
+  //   if(e0==1164){
+  //   printf("*****************************   %g   ******************************************\n", time);
+  //   printf("XC0= %d %d %d %d %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, xc0, yc0, xc1, yc1, xc2, yc2, xc3, yc3);
+  //   printf("DR= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, drfdx1, drfdx2, drfdx3, drfdy1, drfdy2, drfdy3, drdx0, drdy0);
+  //   printf("DU= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dufdx1, dufdx2, dufdx3, dufdy1, dufdy2, dufdy3, dudx0, dudy0);
+  //   printf("DV= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dvfdx1, dvfdx2, dvfdx3, dvfdy1, dvfdy2, dvfdy3, dvdx0, dvdy0);
+  //   printf("DP= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dpfdx1, dpfdx2, dpfdx3, dpfdy1, dpfdy2, dpfdy3, dpdx0, dpdy0);
+  // }
+  // // // }
+
+
+    // Store gradients
+    dq[e0*p_Nfields*p_dim + 0] = drdx0; 
+    dq[e0*p_Nfields*p_dim + 1] = drdy0; 
+    dq[e0*p_Nfields*p_dim + 2] = dudx0; 
+    dq[e0*p_Nfields*p_dim + 3] = dudy0; 
+    dq[e0*p_Nfields*p_dim + 4] = dvdx0; 
+    dq[e0*p_Nfields*p_dim + 5] = dvdy0; 
+    dq[e0*p_Nfields*p_dim + 6] = dpdx0; 
+    dq[e0*p_Nfields*p_dim + 7] = dpdy0; 
+
+  
+    const dlong ebase = e0*p_Nfields*p_dim*p_Nfaces; 
+    const dlong fbase = p_Nfields*p_dim; 
+    // Store gradients
+    dqf[ebase + 0*fbase + 0] = drfdx1; 
+    dqf[ebase + 0*fbase + 1] = drfdy1; 
+    dqf[ebase + 0*fbase + 2] = dufdx1; 
+    dqf[ebase + 0*fbase + 3] = dufdy1; 
+    dqf[ebase + 0*fbase + 4] = dvfdx1; 
+    dqf[ebase + 0*fbase + 5] = dvfdy1; 
+    dqf[ebase + 0*fbase + 6] = dpfdx1; 
+    dqf[ebase + 0*fbase + 7] = dpfdy1; 
+
+    // Store gradients
+    dqf[ebase + 1*fbase + 0] = drfdx2; 
+    dqf[ebase + 1*fbase + 1] = drfdy2; 
+    dqf[ebase + 1*fbase + 2] = dufdx2; 
+    dqf[ebase + 1*fbase + 3] = dufdy2; 
+    dqf[ebase + 1*fbase + 4] = dvfdx2; 
+    dqf[ebase + 1*fbase + 5] = dvfdy2; 
+    dqf[ebase + 1*fbase + 6] = dpfdx2; 
+    dqf[ebase + 1*fbase + 7] = dpfdy2; 
+
+    // Store gradients
+    dqf[ebase + 2*fbase + 0] = drfdx3; 
+    dqf[ebase + 2*fbase + 1] = drfdy3; 
+    dqf[ebase + 2*fbase + 2] = dufdx3; 
+    dqf[ebase + 2*fbase + 3] = dufdy3; 
+    dqf[ebase + 2*fbase + 4] = dvfdx3; 
+    dqf[ebase + 2*fbase + 5] = dvfdy3; 
+    dqf[ebase + 2*fbase + 6] = dpfdx3; 
+    dqf[ebase + 2*fbase + 7] = dpfdy3; 
+
+  // }
+}
+}
+
+
+@kernel void cnsLimiterReconstructTri2D(const dlong N, 
+                                             @restrict const dlong *eList, 
+                                             @restrict const int *EToE, 
+                                             @restrict const int *EToB, 
+                                             @restrict const dfloat *svgeo, 
+                                             @restrict const dfloat *DX, 
+                                             @restrict const dfloat *x, 
+                                             @restrict const dfloat *y, 
+                                             @restrict const  dfloat * pCoeff,
+                                             const dfloat time, 
+                                             @restrict const dfloat *qc,
+                                             @restrict const dfloat *dqf,
+                                             @restrict const dfloat *dq,
+                                             @restrict       dfloat *Q){
+for(dlong e0=0; e0<N; ++e0; @tile(p_blockSize, @outer, @inner)){
+ const dlong etype = eList[e0]; 
+  // Troubled elelemnts and their neighbors
+  if(etype ==s_FVFV_TYPE){
+    const dfloat gamma  = pCoeff[p_GMID]; 
+    // load cell averages
+    dfloat rc0, ruc0, rvc0, ec0, xc0, yc0, sa0; 
+    readCellAverages(e0, svgeo, qc, &xc0, &yc0, &sa0, &rc0, &ruc0, &rvc0, &ec0); 
+    
+    // Get primitive variables
+    dfloat uc0 = ruc0/rc0;  
+    dfloat vc0 = rvc0/rc0; 
+    dfloat pc0 = (gamma-1.0)*(ec0-0.5*rc0*(uc0*uc0+vc0*vc0)); 
+
+
+    const dlong e1 = EToE[e0*p_Nfaces + 0];      
+    const dlong e2 = EToE[e0*p_Nfaces + 1];      
+    const dlong e3 = EToE[e0*p_Nfaces + 2]; 
+
+    // apply boundary condition
+    const int bc1 = EToB[e0*p_Nfaces+ 0];
+    const int bc2 = EToB[e0*p_Nfaces+ 1];
+    const int bc3 = EToB[e0*p_Nfaces+ 2];
+
+    // Read derivatives of primite variables
+    dfloat drdx0 = dq[e0*p_Nfields*p_dim + 0]; 
+    dfloat drdy0 = dq[e0*p_Nfields*p_dim + 1]; 
+    dfloat dudx0 = dq[e0*p_Nfields*p_dim + 2]; 
+    dfloat dudy0 = dq[e0*p_Nfields*p_dim + 3]; 
+    dfloat dvdx0 = dq[e0*p_Nfields*p_dim + 4]; 
+    dfloat dvdy0 = dq[e0*p_Nfields*p_dim + 5]; 
+    dfloat dpdx0 = dq[e0*p_Nfields*p_dim + 6]; 
+    dfloat dpdy0 = dq[e0*p_Nfields*p_dim + 7];  
+
+    // Read derivatives of primite variables
+    dfloat drdx1 = dq[e1*p_Nfields*p_dim + 0]; 
+    dfloat drdy1 = dq[e1*p_Nfields*p_dim + 1]; 
+    dfloat dudx1 = dq[e1*p_Nfields*p_dim + 2]; 
+    dfloat dudy1 = dq[e1*p_Nfields*p_dim + 3]; 
+    dfloat dvdx1 = dq[e1*p_Nfields*p_dim + 4]; 
+    dfloat dvdy1 = dq[e1*p_Nfields*p_dim + 5]; 
+    dfloat dpdx1 = dq[e1*p_Nfields*p_dim + 6]; 
+    dfloat dpdy1 = dq[e1*p_Nfields*p_dim + 7];  
+
+    // Read derivatives of primite variables
+    dfloat drdx2 = dq[e2*p_Nfields*p_dim + 0]; 
+    dfloat drdy2 = dq[e2*p_Nfields*p_dim + 1]; 
+    dfloat dudx2 = dq[e2*p_Nfields*p_dim + 2]; 
+    dfloat dudy2 = dq[e2*p_Nfields*p_dim + 3]; 
+    dfloat dvdx2 = dq[e2*p_Nfields*p_dim + 4]; 
+    dfloat dvdy2 = dq[e2*p_Nfields*p_dim + 5]; 
+    dfloat dpdx2 = dq[e2*p_Nfields*p_dim + 6]; 
+    dfloat dpdy2 = dq[e2*p_Nfields*p_dim + 7];  
+
+    // Read derivatives of primite variables
+    dfloat drdx3 = dq[e3*p_Nfields*p_dim + 0]; 
+    dfloat drdy3 = dq[e3*p_Nfields*p_dim + 1]; 
+    dfloat dudx3 = dq[e3*p_Nfields*p_dim + 2]; 
+    dfloat dudy3 = dq[e3*p_Nfields*p_dim + 3]; 
+    dfloat dvdx3 = dq[e3*p_Nfields*p_dim + 4]; 
+    dfloat dvdy3 = dq[e3*p_Nfields*p_dim + 5]; 
+    dfloat dpdx3 = dq[e3*p_Nfields*p_dim + 6]; 
+    dfloat dpdy3 = dq[e3*p_Nfields*p_dim + 7];  
+
+    const dlong ebase = e0*p_Nfields*p_dim*p_Nfaces; 
+    const dlong fbase = p_Nfields*p_dim; 
+    if(bc1>0){
+      drdx1 = dqf[ebase + 0*fbase  +  0]; 
+      drdy1 = dqf[ebase + 0*fbase  +  1]; 
+      dudx1 = dqf[ebase + 0*fbase  +  2]; 
+      dudy1 = dqf[ebase + 0*fbase  +  3]; 
+      dvdx1 = dqf[ebase + 0*fbase  +  4]; 
+      dvdy1 = dqf[ebase + 0*fbase  +  5]; 
+      dpdx1 = dqf[ebase + 0*fbase  +  6]; 
+      dpdy1 = dqf[ebase + 0*fbase  +  7];  
+    }
+
+    if(bc2>0){
+      drdx2 = dqf[ebase + 1*fbase  +  0]; 
+      drdy2 = dqf[ebase + 1*fbase  +  1]; 
+      dudx2 = dqf[ebase + 1*fbase  +  2]; 
+      dudy2 = dqf[ebase + 1*fbase  +  3]; 
+      dvdx2 = dqf[ebase + 1*fbase  +  4]; 
+      dvdy2 = dqf[ebase + 1*fbase  +  5]; 
+      dpdx2 = dqf[ebase + 1*fbase  +  6]; 
+      dpdy2 = dqf[ebase + 1*fbase  +  7];  
+    }
+
+     if(bc3>0){
+      drdx3 = dqf[ebase + 2*fbase  +  0]; 
+      drdy3 = dqf[ebase + 2*fbase  +  1]; 
+      dudx3 = dqf[ebase + 2*fbase  +  2]; 
+      dudy3 = dqf[ebase + 2*fbase  +  3]; 
+      dvdx3 = dqf[ebase + 2*fbase  +  4]; 
+      dvdy3 = dqf[ebase + 2*fbase  +  5]; 
+      dpdx3 = dqf[ebase + 2*fbase  +  6]; 
+      dpdy3 = dqf[ebase + 2*fbase  +  7];  
+    }
+
+    const dfloat epse = 1E-10;
+    dfloat fac, g1, g2, g3, w1, w2, w3; 
+    // Find weights for density
+    g1  = drdx1*drdx1 +  drdy1*drdy1; 
+    g2  = drdx2*drdx2 +  drdy2*drdy2; 
+    g3  = drdx3*drdx3 +  drdy3*drdy3; 
+    fac = g1*g1 + g2*g2 + g3*g3;
+
+    w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+    w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+    w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+
+    dfloat ldrdx = w1*drdx1 + w2* drdx2 +w3* drdx3; 
+    dfloat ldrdy = w1*drdy1 + w2* drdy2 +w3* drdy3; 
+
+
+    // //  if(e0<400 && e0>300){
+    // if( bc1 == 1 || bc2==1 || bc3==1){
+    // if(e0==196){
+    // printf("DR= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldrdx, ldrdy);
+    // }
+
+    // // Find weights for density
+    // gr1  = drdx1*drdx1 +  drdy1*drdy1; 
+    // gr2  = drdx2*drdx2 +  drdy2*drdy2; 
+    // gr3  = drdx3*drdx3 +  drdy3*drdy3; 
+    // facr = gr1*gr1 + gr2*gr2 + gr3*gr3;
+
+    // wr1 = (gr2 * gr3 + epse)/(facr+3.0*epse);
+    // wr2 = (gr1 * gr3 + epse)/(facr+3.0*epse);
+    // wr3 = (gr1 * gr2 + epse)/(facr+3.0*epse);
+
+    // dfloat ldrdx = wr1*drdx1 + wr2* drdx2 +wr3* drdx3; 
+    // dfloat ldrdy = wr1*drdy1 + wr2* drdy2 +wr3* drdy3; 
+
+    // Find weights for u-velocity
+    g1  = dudx1*dudx1 +  dudy1*dudy1; 
+    g2  = dudx2*dudx2 +  dudy2*dudy2; 
+    g3  = dudx3*dudx3 +  dudy3*dudy3; 
+    fac = g1*g1 + g2*g2 + g3*g3;
+
+    w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+    w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+    w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+    dfloat ldudx = w1*dudx1 + w2*dudx2 + w3*dudx3; 
+    dfloat ldudy = w1*dudy1 + w2*dudy2 + w3*dudy3; 
+
+    // if(e0==196){
+    // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldudx, ldudy);
+    // }
+
+      // Find weights for u-velocity
+    g1  = dvdx1*dvdx1 +  dvdy1*dvdy1; 
+    g2  = dvdx2*dvdx2 +  dvdy2*dvdy2; 
+    g3  = dvdx3*dvdx3 +  dvdy3*dvdy3; 
+    fac = g1*g1 + g2*g2 + g3*g3;
+
+    w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+    w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+    w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+    dfloat ldvdx = w1*dvdx1 + w2* dvdx2 +w3* dvdx3; 
+    dfloat ldvdy = w1*dvdy1 + w2* dvdy2 +w3* dvdy3; 
+
+    // if(e0==196){
+    // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldvdx, ldvdy);
+    // }
+
+    // Find weights for u-velocity
+    g1  = dpdx1*dpdx1 +  dpdy1*dpdy1; 
+    g2  = dpdx2*dpdx2 +  dpdy2*dpdy2; 
+    g3  = dpdx3*dpdx3 +  dpdy3*dpdy3; 
+    fac = g1*g1 + g2*g2 + g3*g3;
+
+    w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+    w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+    w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+    dfloat ldpdx = w1*dpdx1 + w2*dpdx2 +w3*dpdx3; 
+    dfloat ldpdy = w1*dpdy1 + w2*dpdy2 +w3*dpdy3; 
+
+
+    // Check for negative densities and correct it
+    dfloat rrn;
+    int pos = 1; 
+    int skr = 0; 
+    // for(int n=0; n<p_Np ; n++){ rrn[n] = 0.0;}  
+    // first recontruct density to check positivity
+    for(int i=0; i<p_Np; i++){
+      const dfloat dx = DX[e0*p_Np*p_dim + i + 0*p_Np]; 
+      const dfloat dy = DX[e0*p_Np*p_dim + i + 1*p_Np];
+       rrn     = rc0 + dx*ldrdx + dy*ldrdy;
+       pos     =  rrn>1e-3 ? 1 : 0; 
+       // if(e0==991){
+       // printf("correcting = %d %d %d %g %g %g\n", e0, skr, i, rrn, ldrdx, ldrdy);
+       // }
+       
+       if(pos==0){ 
+        ldrdx *=0.5; ldrdy *=0.5; 
+        // if(e0==991)
+        printf("correcting = %d %d %d %g %g %g\n", e0, skr, i, rrn, ldrdx, ldrdy);
+        i=0;  skr++;
+       }
+
+       if(skr>=5){
+        ldrdx = 0.0; 
+        ldrdy = 0.0; 
+       }
+
+    }
+
+
+
+
+
+
+
+
+
+    // if(e0==196){
+    // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldpdx, ldpdy);
+    // }
+
+  //   if(e0==329){
+  //   // printf("R= %d %g %g  %g %g  %g %g \n", e0, rc0, w1, w2, w3, ldpdx, ldpdy);
+  //   // printf("R= %d %g %g  %g %g \n", e0, g1, g2, g3, fac);
+  // }
+
+
+
+  // // //  if(e0<400 && e0>300){
+  //   if( bc1 == 1 || bc2==1 || bc3==1){
+  //   // if(e0==329){
+  //   printf("DL= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,ldrdx, ldrdy, ldudx, ldudy, ldvdx, ldvdy);
+  //   printf("WR= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3, gr1, gr2, gr3, wr1, wr2, wr3);
+  //   printf("DR= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3, drdx1, drdx2, drdx3, drdy1, drdy2, drdy3);
+  //   // printf("DRE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,drdx1, drdx2, drdx3, drdy1, drdy2, drdy3);
+  //   // printf("DRE= %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, gr1, gr2, gr3, wr1, wr2, wr3, facr, epse);
+  //   // printf("DUE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dudx1, dudx2, dudx3, dudy1, dudy2, dudy3);
+  //   // printf("DVE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dvdx1, dvdx2, dvdx3, dvdy1, dvdy2, dvdy3);
+  //   // printf("DPE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dpdx1, dpdx2, dpdx3, dpdy1, dpdy2, dpdy3);
+  //   // printf("DCE0= %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3,drdx0, drdy0, dudx0, dudy0, dvdx0, dvdy0, dpdx0, dpdy0);
+  // // }
+  // }
+
+    
+    // int pos  = 0; 
+    dfloat run, rvn, ren; 
+    // first recontruct density to check positivity
+    for(int i=0; i<p_Np; i++){
+      const dfloat dx = DX[e0*p_Np*p_dim + i + 0*p_Np]; 
+      const dfloat dy = DX[e0*p_Np*p_dim + i + 1*p_Np];
+
+      const dfloat dr = dx*ldrdx + dy*ldrdy; 
+      const dfloat du = dx*ldudx + dy*ldudy; 
+      const dfloat dv = dx*ldvdx + dy*ldvdy; 
+      const dfloat dp = dx*ldpdx + dy*ldpdy; 
+
+      rrn = rc0 + dr; 
+      run = ruc0 + rrn*du + uc0*dr; 
+      rvn = rvc0 + rrn*dv + vc0*dr; 
+      ren = ec0 + (1.0/(gamma-1.0))*dp+0.5*dr*(uc0*uc0+vc0*vc0)+rc0*(uc0*du+vc0*dv);
+
+      // if(e0==196){
+      //   printf("DU= %d %g %g  %g %g %g %g\n", e0, dx, dy, rc0, ldrdx, ldrdy, rrn);
+      //  }
+
+    
+      //   rpn =  pc0 + dx*ldpdx + dy*ldpdy;
+      //   // rrn = rc0 + dx*ldrdx + dy*ldrdy; 
+      //   rvn = vc0 + dx*ldvdx + dy*ldvdy; 
+      //   // rpn = pc0 + dx*ldpdx + dy*ldpdy; 
+
+        Q[e0*p_Np*p_Nfields + i +0*p_Np] = rrn; 
+        Q[e0*p_Np*p_Nfields + i +1*p_Np] = run; 
+        Q[e0*p_Np*p_Nfields + i +2*p_Np] = rvn; 
+        Q[e0*p_Np*p_Nfields + i +3*p_Np] = ren;  
+
+
+  //   if(e0==329){
+  //   printf("RN= %d %g %g  %g %g  %g %g  %g %g %g\n", e0, dx, dy , rc0, wr1, wr2, wr3,ldrdx, ldrdy, rrn);
+  // }
+
+    // // Read derivatives
+    // dfloat drdx0 = dq[e0*p_Nfields*p_dim + 0]; 
+    // dfloat drdy0 = dq[e0*p_Nfields*p_dim + 1]; 
+    // dfloat dudx0 = dq[e0*p_Nfields*p_dim + 2]; 
+    // dfloat dudy0 = dq[e0*p_Nfields*p_dim + 3]; 
+    // dfloat dvdx0 = dq[e0*p_Nfields*p_dim + 4]; 
+    // dfloat dvdy0 = dq[e0*p_Nfields*p_dim + 5]; 
+    // dfloat dpdx0 = dq[e0*p_Nfields*p_dim + 6]; 
+    // dfloat dpdy0 = dq[e0*p_Nfields*p_dim + 7];  
+
+
+        // Q[e0*p_Np*p_Nfields + i +0*p_Np] = 1.0; 
+        // Q[e0*p_Np*p_Nfields + i +1*p_Np] = dudx0  ; 
+        // Q[e0*p_Np*p_Nfields + i +2*p_Np] = dudy0 ; 
+        // Q[e0*p_Np*p_Nfields + i +3*p_Np] = dudy0; 
+      }
+
+      
+    } 
+  }
+
+  }
+
+
+
+
+
+
+
+// @kernel void amxN(const dlong N,
+//                  const int Nfields,
+//                  @restrict const dfloat *a,
+//                  @restrict       dfloat *x){
+
+//   for(dlong n=0;n<N;++n;@tile(p_blockSize,@outer,@inner)){
+//     const dfloat w = a[n]; 
+//     for(int i=0; i<Nfields; i++)
+//          x[n*Nfields + i] = w*x[n*Nfields +i];
+//   }
+// }
+
+
+
+
+// // Read cell center values
+// void readCellAverages(const dlong e, const dfloat *svgeo, const dfloat *qc, 
+//                        dfloat *xc, dfloat *yc, dfloat *sa, 
+//                        dfloat *r, dfloat *u, dfloat *v,  dfloat *p){
+//   // Load cell center coordinates
+//   dfloat rxc = svgeo[e*s_Nvgeo + s_CXID]; 
+//   dfloat ryc = svgeo[e*s_Nvgeo + s_CYID]; 
+//   dfloat rsa = svgeo[e*s_Nvgeo + s_SAID]; 
+// // load cell averages
+//   dfloat rr =qc[e*p_Nfields +0];
+//   dfloat ru =qc[e*p_Nfields +1];
+//   dfloat rv =qc[e*p_Nfields +2];
+//   dfloat rp =qc[e*p_Nfields +3];
+
+// *xc = rxc;  *yc = ryc;  *sa = rsa; 
+// *r  = rr; *u  = ru; *v  = rv; *p  = rp;
+// }
+
+
+
+//   // Read cell center values
+// void readVertexValues(const dlong e, const dfloat gamma, const int id, const int vid, const dfloat *qv,
+//   const dfloat *x, const dfloat *y, dfloat *xv, dfloat *yv, dfloat *rv, dfloat *uv, dfloat *vv,  dfloat *pv)
+// {
+//     const dlong base = e*s_Nverts*p_Nfields;
+//     // Solution at centers
+//     dfloat rrv  =qv[base + id*p_Nfields +0];
+//     dfloat ruv  =qv[base + id*p_Nfields +1];
+//     dfloat rvv  =qv[base + id*p_Nfields +2];
+//     dfloat rpv  =qv[base + id*p_Nfields +3];
+//     // Coordinates
+//     dfloat rxv = x[e*p_Np + vid];
+//     dfloat ryv = y[e*p_Np + vid];
+//     //Assign
+//     *rv = rrv; *uv = ruv; *vv = rvv; *pv = rpv; 
+//     *xv = rxv; *yv = ryv; 
+// }
+
+
+//  // Read cell center values
+// void readVertexValues(const dlong e, const dfloat gamma, const int id, const int vid, const dfloat *qv,
+//   const dfloat *x, const dfloat *y, dfloat *xv, dfloat *yv, dfloat *rv, dfloat *uv, dfloat *vv,  dfloat *pv)
+// {
+//     const dlong base = e*s_Nverts*p_Nfields;
+//     // Solution at centers
+//     dfloat rrv  =qv[base + id*p_Nfields +0];
+//     dfloat ruv  =qv[base + id*p_Nfields +1];
+//     dfloat rvv  =qv[base + id*p_Nfields +2];
+//     dfloat rpv  =qv[base + id*p_Nfields +3];
+//     // Coordinates
+//     dfloat rxv = x[e*p_Np + vid];
+//     dfloat ryv = y[e*p_Np + vid];
+//     //Assign
+//     *rv = rrv; *uv = ruv; *vv = rvv; *pv = rpv; 
+//     *xv = rxv; *yv = ryv; 
+// }
+
+
+
+
+
+// @kernel void cnsLimiterVertexValuesTri2D(const dlong N, 
+//                                          @restrict const dlong *eList, 
+//                                          @restrict const int *vertexNodes, 
+//                                          @restrict const  dfloat * pCoeff,
+//                                          @restrict const dfloat *q,
+//                                          @restrict       dfloat *qv){
+// for(dlong e=0; e<N; ++e; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     const dfloat gamma = pCoeff[p_GMID]; // gamma
+//     const dlong qbase = e*p_Np*p_Nfields;
+
+//     for(int i=0; i<3; i++){
+//       const dlong n   = vertexNodes[i]; 
+//       const dfloat r  = q[qbase + n +0*p_Np];
+//       const dfloat ru = q[qbase + n +1*p_Np];
+//       const dfloat rv = q[qbase + n +2*p_Np];
+//       const dfloat E  = q[qbase + n +3*p_Np];
+//       //
+//       const dlong base = e*s_Nverts*p_Nfields + i*p_Nfields;
+//       qv[base + 0] = r;  
+//       qv[base + 1] = ru;  
+//       qv[base + 2] = rv;  
+//       qv[base + 3] = E;  
+//     }
+//   // }
+// }
+// }
+
+ 
+// // Read cell center values
+// void applyCellBC(const dlong e, const dfloat time, const int f, const int bctype, const dfloat *sgeo,
+//                  const dfloat  gamma, const dfloat  R, const dfloat CP, const dfloat CV, const dfloat mu, 
+//                  dfloat  xc0, dfloat  yc0,  dfloat sa0, dfloat  rc0, dfloat uc0, dfloat  vc0,  dfloat pc0,
+//                  dfloat *xc, dfloat *yc,  dfloat *rc, dfloat *uc, dfloat *vc,  dfloat *pc){
+// // Fake gradients in bc
+// const dfloat dudxM=0., dudyM=0., dvdxM=0., dvdyM=0.; 
+//       dfloat dudxP=0., dudyP=0., dvdxP=0., dvdyP=0.; 
+
+
+// const dfloat nx = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_NXID]; 
+// const dfloat ny = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_NYID];
+// const dfloat sj = sgeo[e*p_Nsgeo*p_Nfaces + f*p_Nsgeo + p_SJID];
+// const dfloat hp = sa0 /sj; 
+// dfloat xb   = xc0 + 2.0*nx*hp; 
+// dfloat yb   = yc0 + 2.0*ny*hp; 
+
+// // Initialze BC's
+// dfloat rb=rc0, ub=uc0, vb=vc0, pb=pc0;  
+
+// cnsBoundaryConditions2D(bctype, gamma, R, CP, CV, mu, \
+//                                   time, xb, yb, nx, ny, \
+//                                   rc0, uc0, vc0, pc0, dudxM, dudyM, dvdxM, dvdyM,
+//                                   &rb, &ub, &vb, &pb, &dudxP, &dudyP, &dvdxP, &dvdyP);
+// // Assign values
+// *rc = rb; *uc = ub; *vc= vb; 
+// *pc = pb; *xc = xb; *yc = yb; 
+// }
+
+
+
+
+// @kernel void cnsLimiterCellVariableTri2D(const dlong N, 
+//                                      @restrict const dlong *eList, 
+//                                      @restrict const  dfloat * pCoeff,
+//                                      @restrict const dfloat *projectC0,
+//                                      @restrict const dfloat *q,
+//                                      @restrict       dfloat *qc,
+//                                      @restrict       dfloat *qv){
+// for(dlong e=0; e<N; ++e; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     // First find the cell center values
+//     dfloat rc=0.0, ruc=0.0 , rvc=0.0, ec= 0.0; 
+//     for(int n=0; n<p_Np; n++){
+//       const dlong qbase = e*p_Np*p_Nfields + n;
+//       const dfloat pc0 = projectC0[n]; 
+//       rc  +=pc0*q[qbase+0*p_Np];
+//       ruc +=pc0*q[qbase+1*p_Np];
+//       rvc +=pc0*q[qbase+2*p_Np];
+//       ec  +=pc0*q[qbase+3*p_Np];
+//     }
+//     const dfloat gamma = pCoeff[p_GMID]; // gamma
+//     // Compute primite variables from conservative fileds
+//     const dfloat uc = ruc/rc; 
+//     const dfloat vc = rvc/rc; 
+//     const dfloat pc = (gamma-1)*(ec-0.5*rc*(uc*uc+vc*vc)); 
+//     // Store variables
+//     qc[e*p_Nfields +0] = rc; 
+//     qc[e*p_Nfields +1] = uc; 
+//     qc[e*p_Nfields +2] = vc; 
+//     qc[e*p_Nfields +3] = pc; 
+
+
+
+//     // For all vertices 
+//     for(int v = 0; v<s_Nverts; ++v){
+//       const dfloat rr = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 0]; 
+//       const dfloat ru = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 1]; 
+//       const dfloat rv = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 2]; 
+//       const dfloat rE = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 3]; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 1] =  ru/rr; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 2] =  rv/rr; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 3] =  (gamma-1.0)*(rE-0.5*(ru*ru+rv*rv)/rr); 
+//     }
+//   // }
+// }
+// }
+
+
+// @kernel void cnsLimiterCellVariableTri2D(const dlong N, 
+//                                      @restrict const dlong *eList, 
+//                                      @restrict const  dfloat * pCoeff,
+//                                      @restrict const dfloat *projectC0,
+//                                      @restrict const dfloat *q,
+//                                      @restrict       dfloat *qc,
+//                                      @restrict       dfloat *qv){
+// for(dlong e=0; e<N; ++e; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     // First find the cell center values
+//     dfloat rc=0.0, ruc=0.0 , rvc=0.0, ec= 0.0; 
+//     for(int n=0; n<p_Np; n++){
+//       const dlong qbase = e*p_Np*p_Nfields + n;
+//       const dfloat pc0 = projectC0[n]; 
+//       rc  +=pc0*q[qbase+0*p_Np];
+//       ruc +=pc0*q[qbase+1*p_Np];
+//       rvc +=pc0*q[qbase+2*p_Np];
+//       ec  +=pc0*q[qbase+3*p_Np];
+//     }
+//     const dfloat gamma = pCoeff[p_GMID]; // gamma
+//     // Compute primite variables from conservative fileds
+//     const dfloat uc = ruc/rc; 
+//     const dfloat vc = rvc/rc; 
+//     const dfloat pc = (gamma-1)*(ec-0.5*rc*(uc*uc+vc*vc)); 
+//     // Store variables
+//     qc[e*p_Nfields +0] = rc; 
+//     qc[e*p_Nfields +1] = uc; 
+//     qc[e*p_Nfields +2] = vc; 
+//     qc[e*p_Nfields +3] = pc; 
+
+
+//     const dlong vbase = e*p_Nfaces*s_Nverts*p_Nfields; 
+//     const dlong qbase = e*p_Np*p_Nfields; 
+//     for(int n =0; n< (p_Nfaces*s_Nverts); n++){
+//       const dlong idM = vmapM[e*p_Nfaces*s_Nverts + n]; 
+//       const dlong idP = vmapP[e*p_Nfaces*s_Nverts + n]; 
+//       qv[vbase + 0 + n*p_Nfields] = 0.5*(q[qbase+idM+0*p_Np] + q[qbase+idP+0*p_Np]);
+//       qv[vbase + 1 + n*p_Nfields] = 0.5*(q[qbase+idM+1*p_Np] + q[qbase+idP+1*p_Np]);
+//       qv[vbase + 2 + n*p_Nfields] = 0.5*(q[qbase+idM+2*p_Np] + q[qbase+idP+2*p_Np]);
+//       qv[vbase + 3 + n*p_Nfields] = 0.5*(q[qbase+idM+3*p_Np] + q[qbase+idP+3*p_Np]);
+//     }
+
+
+
+
+
+    
+//     // For all vertices 
+//     for(int v = 0; v<s_Nverts; ++v){
+//       const dfloat rr = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 0]; 
+//       const dfloat ru = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 1]; 
+//       const dfloat rv = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 2]; 
+//       const dfloat rE = qv[e*s_Nverts*p_Nfields + v*p_Nfields + 3]; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 1] =  ru/rr; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 2] =  rv/rr; 
+//       qv[e*s_Nverts*p_Nfields + v*p_Nfields + 3] =  (gamma-1.0)*(rE-0.5*(ru*ru+rv*rv)/rr); 
+//     }
+//   // }
+// }
+// }
+
+// @kernel void cnsLimiterCellVariableTri2D(const dlong N, 
+//                                      @restrict const dlong *eList, 
+//                                      @restrict const  dlong  *  vmapM,
+//                                      @restrict const  dlong  *  vmapP,
+//                                      @restrict const  dfloat * pCoeff,
+//                                      @restrict const dfloat *projectC0,
+//                                      @restrict const dfloat *q,
+//                                      @restrict       dfloat *qc,
+//                                      @restrict       dfloat *qv){
+// for(dlong e=0; e<N; ++e; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     // First find the cell center values
+//     dfloat rc=0.0, ruc=0.0 , rvc=0.0, ec= 0.0; 
+//     for(int n=0; n<p_Np; n++){
+//       const dlong qbase = e*p_Np*p_Nfields + n;
+//       const dfloat pc0 = projectC0[n]; 
+//       rc  +=pc0*q[qbase+0*p_Np];
+//       ruc +=pc0*q[qbase+1*p_Np];
+//       rvc +=pc0*q[qbase+2*p_Np];
+//       ec  +=pc0*q[qbase+3*p_Np];
+//     }
+//     const dfloat gamma = pCoeff[p_GMID]; // gamma
+//     // Compute primite variables from conservative fileds
+//     const dfloat uc = ruc/rc; 
+//     const dfloat vc = rvc/rc; 
+//     const dfloat pc = (gamma-1)*(ec-0.5*rc*(uc*uc+vc*vc)); 
+//     // Store variables
+//     qc[e*p_Nfields +0] = rc; 
+//     qc[e*p_Nfields +1] = uc; 
+//     qc[e*p_Nfields +2] = vc; 
+//     qc[e*p_Nfields +3] = pc; 
+
+//     //  if(e==102){
+//     //  // Store variables
+//     //  printf("%d rc = %.4e uc = %.4e vc = %.4e pc = %.4e \n", e, qc[e*p_Nfields +0], qc[e*p_Nfields +1], qc[e*p_Nfields +2], qc[e*p_Nfields +3]); 
+
+//     // }
+
+//     int vnodes[6]; 
+//     vnodes[0] = 0;         vnodes[1] = p_Nfp-1; 
+//     vnodes[2] = p_Nfp;     vnodes[3] = 2*p_Nfp-1; 
+//     vnodes[4] = 3*p_Nfp-1; vnodes[5] = 2*p_Nfp; 
+
+//     const dlong id  = e*p_Nfp*p_Nfaces;
+//     // Read vertex values for each face, average and return to primitives
+//     const dlong vbase = e*s_NfacesNverts*p_Nfields; 
+//     for(int n= 0; n<s_NfacesNverts; n++){
+//       int vn = vnodes[n]; 
+//       const dlong idM = vmapM[id+vn]; 
+//       const dlong idP = vmapP[id+vn]; 
+//        // load traces
+//       const dlong eM = e; 
+//       const dlong eP = idP/p_Np;
+//       const int vidM = idM%p_Np; 
+//       const int vidP = idP%p_Np;
+
+//       const dlong qbaseM = eM*p_Np*p_Nfields + vidM;
+//       const dlong qbaseP = eP*p_Np*p_Nfields + vidP;
+
+//       // if(e==309){
+//       //   printf("eM = %d eP = %d n = %d idM = %d idP = %d vidM = %d vidP = %d qbaseM= %d qbaseP= %d\n", eM, eP, s_NfacesNverts, idM, idP,  vidM, vidP, qbaseM, qbaseP);
+//       // }
+
+//       const dfloat rrM = q[qbaseM+0*p_Np];
+//       const dfloat ruM = q[qbaseM+1*p_Np];
+//       const dfloat rvM = q[qbaseM+2*p_Np];
+//       const dfloat rEM = q[qbaseM+3*p_Np];
+
+//       const dfloat rrP = q[qbaseP+0*p_Np];
+//       const dfloat ruP = q[qbaseP+1*p_Np];
+//       const dfloat rvP = q[qbaseP+2*p_Np];
+//       const dfloat rEP = q[qbaseP+3*p_Np];
+
+//       const dfloat rr = 0.5*(rrM + rrP); 
+//       const dfloat uv = 0.5*(ruM + ruP)/rr; 
+//       const dfloat vv = 0.5*(rvM + rvP)/rr; 
+//       const dfloat pv = (gamma-1)*(0.5*(rEM+rEP)-0.5*rr*(uv*uv+vv*vv));
+
+//       qv[vbase + n + 0*s_NfacesNverts] = rr; 
+//       qv[vbase + n + 1*s_NfacesNverts] = uv; 
+//       qv[vbase + n + 2*s_NfacesNverts] = vv; 
+//       qv[vbase + n + 3*s_NfacesNverts] = pv; 
+
+
+//       // if(e==102){
+//       //   printf("%d %d %.4e %.4e %.4e %.4e \n", e, n, rr, uv, vv, pv); 
+
+//       // }
+
+
+
+//     }
+// }
+// }
+
+// @kernel void cnsLimiterUnlimitedGradientTri2D(const dlong N, 
+//                                              @restrict const dlong *eList, 
+//                                              @restrict const int *EToE, 
+//                                              @restrict const int *EToB, 
+//                                              @restrict const int *vertexNodes, 
+//                                              @restrict const dfloat *sgeo, 
+//                                              @restrict const dfloat *svgeo, 
+//                                              @restrict const dfloat *x, 
+//                                              @restrict const dfloat *y, 
+//                                              @restrict const  dfloat * pCoeff,
+//                                              const dfloat time, 
+//                                              @restrict const dfloat *qc,
+//                                              @restrict const dfloat *qv,
+//                                              @restrict       dfloat *dqf,
+//                                              @restrict       dfloat *dq){
+// for(dlong e0=0; e0<N; ++e0; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e0]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     const dfloat gamma  = pCoeff[p_GMID]; 
+//     const dfloat R      = pCoeff[p_RRID]; 
+//     const dfloat CP     = pCoeff[p_CPID]; 
+//     const dfloat CV     = pCoeff[p_CVID]; 
+//     const dfloat mu     = pCoeff[p_MUID]; // bulk viscosity
+
+//     const int e1 = EToE[e0*p_Nfaces + 0];      
+//     const int e2 = EToE[e0*p_Nfaces + 1];      
+//     const int e3 = EToE[e0*p_Nfaces + 2]; 
+
+//     // apply boundary condition
+//     const int bc1 = EToB[e0*p_Nfaces+ 0];
+//     const int bc2 = EToB[e0*p_Nfaces+ 1];
+//     const int bc3 = EToB[e0*p_Nfaces+ 2];
+
+
+//     // load cell averages
+//     dfloat rc0, uc0, vc0, pc0, xc0, yc0, sa0; 
+//     dfloat rc1, uc1, vc1, pc1, xc1, yc1, sa1; 
+//     dfloat rc2, uc2, vc2, pc2, xc2, yc2, sa2;
+//     dfloat rc3, uc3, vc3, pc3, xc3, yc3, sa3;
+//     //
+//     readCellAverages(e0, svgeo, qc, &xc0, &yc0, &sa0, &rc0, &uc0, &vc0, &pc0); 
+//     readCellAverages(e1, svgeo, qc, &xc1, &yc1, &sa1, &rc1, &uc1, &vc1, &pc1);      
+//     readCellAverages(e2, svgeo, qc, &xc2, &yc2, &sa2, &rc2, &uc2, &vc2, &pc2);    
+//     readCellAverages(e3, svgeo, qc, &xc3, &yc3, &sa3, &rc3, &uc3, &vc3, &pc3);  
+
+//     // Reflect element and apply bc
+//     if(bc1>0){
+//       applyCellBC(e0, time, 0, bc1, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc1, &yc1, &rc1, &uc1, &vc1, &pc1); 
+//       sa1 = sa0; 
+//     }
+
+//     if(bc2>0){
+//        applyCellBC(e0, time, 1, bc2, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc2, &yc2, &rc2, &uc2, &vc2, &pc2);
+//        sa2 = sa0; 
+//     }
+
+//     if(bc3>0){
+//        applyCellBC(e0, time, 2, bc3, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc3, &yc3, &rc3, &uc3, &vc3, &pc3);
+//        sa3 = sa0; 
+
+//     }
+
+//   // Get Vertex solution, note that conservative and C0
+//     const int n1 = vertexNodes[0];
+//     const int n2 = vertexNodes[1];
+//     const int n3 = vertexNodes[2];
+
+//     const dfloat xv1 = x[e0*p_Np + n1]; const dfloat yv1 = y[e0*p_Np + n1];
+//     const dfloat xv2 = x[e0*p_Np + n2]; const dfloat yv2 = y[e0*p_Np + n2];
+//     const dfloat xv3 = x[e0*p_Np + n3]; const dfloat yv3 = y[e0*p_Np + n3];
+    
+//     const dlong vbase = e0*s_NfacesNverts*p_Nfields; 
+
+//     const dfloat rv1 = qv[vbase + 0 + 0*s_NfacesNverts]; 
+//     const dfloat uv1 = qv[vbase + 0 + 1*s_NfacesNverts]; 
+//     const dfloat vv1 = qv[vbase + 0 + 2*s_NfacesNverts]; 
+//     const dfloat pv1 = qv[vbase + 0 + 3*s_NfacesNverts]; 
+//     //
+//     const dfloat rv2 = qv[vbase + 1 + 0*s_NfacesNverts]; 
+//     const dfloat uv2 = qv[vbase + 1 + 1*s_NfacesNverts]; 
+//     const dfloat vv2 = qv[vbase + 1 + 2*s_NfacesNverts]; 
+//     const dfloat pv2 = qv[vbase + 1 + 3*s_NfacesNverts]; 
+//     // 
+//     const dfloat rv3 = qv[vbase + 2 + 0*s_NfacesNverts]; 
+//     const dfloat uv3 = qv[vbase + 2 + 1*s_NfacesNverts]; 
+//     const dfloat vv3 = qv[vbase + 2 + 2*s_NfacesNverts]; 
+//     const dfloat pv3 = qv[vbase + 2 + 3*s_NfacesNverts]; 
+
+//     const dfloat rv4 = qv[vbase + 3 + 0*s_NfacesNverts]; 
+//     const dfloat uv4 = qv[vbase + 3 + 1*s_NfacesNverts]; 
+//     const dfloat vv4 = qv[vbase + 3 + 2*s_NfacesNverts]; 
+//     const dfloat pv4 = qv[vbase + 3 + 3*s_NfacesNverts]; 
+
+//     //
+//     const dfloat rv5 = qv[vbase + 4 + 0*s_NfacesNverts]; 
+//     const dfloat uv5 = qv[vbase + 4 + 1*s_NfacesNverts]; 
+//     const dfloat vv5 = qv[vbase + 4 + 2*s_NfacesNverts]; 
+//     const dfloat pv5 = qv[vbase + 4 + 3*s_NfacesNverts]; 
+
+//     const dfloat rv6 = qv[vbase + 5 + 0*s_NfacesNverts]; 
+//     const dfloat uv6 = qv[vbase + 5 + 1*s_NfacesNverts]; 
+//     const dfloat vv6 = qv[vbase + 5 + 2*s_NfacesNverts]; 
+//     const dfloat pv6 = qv[vbase + 5 + 3*s_NfacesNverts]; 
+
+//     // Compute Gradients
+//     const dfloat A1 = (sa0 + sa1);  // const dfloat iA1 = 1./A1; 
+//     const dfloat A2 = (sa0 + sa2);  // const dfloat iA2 = 1./A2; 
+//     const dfloat A3 = (sa0 + sa3);  // const dfloat iA3 = 1./A3;
+
+//     // Compute face gradients: velocity
+//     const dfloat drfdx1 = 0.5*( (rc1-rc0)*(yv2-yv1) + (rv1-rv2)*(yc1 - yc0))/A1;  
+//     const dfloat drfdy1 =-0.5*( (rc1-rc0)*(xv2-xv1) + (rv1-rv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat drfdx2 = 0.5*( (rc2-rc0)*(yv3-yv2) + (rv3-rv4)*(yc2 - yc0))/A2;  
+//     const dfloat drfdy2 =-0.5*( (rc2-rc0)*(xv3-xv2) + (rv3-rv4)*(xc2 - xc0))/A2;  
+
+//     const dfloat drfdx3 = 0.5*( (rc3-rc0)*(yv1-yv3) + (rv5-rv6)*(yc3 - yc0))/A3;  
+//     const dfloat drfdy3 =-0.5*( (rc3-rc0)*(xv1-xv3) + (rv5-rv6)*(xc3 - xc0))/A3;  
+   
+//     // Compute face gradients: velocity
+//     const dfloat dufdx1 = 0.5*( (uc1-uc0)*(yv2-yv1) + (uv1-uv2)*(yc1 - yc0))/A1;  
+//     const dfloat dufdy1 =-0.5*( (uc1-uc0)*(xv2-xv1) + (uv1-uv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dufdx2 = 0.5*( (uc2-uc0)*(yv3-yv2) + (uv3-uv4)*(yc2 - yc0))/A2;  
+//     const dfloat dufdy2 =-0.5*( (uc2-uc0)*(xv3-xv2) + (uv3-uv4)*(xc2 - xc0))/A2;  
+
+//     const dfloat dufdx3 = 0.5*( (uc3-uc0)*(yv1-yv3) + (uv5-uv6)*(yc3 - yc0))/A3;  
+//     const dfloat dufdy3 =-0.5*( (uc3-uc0)*(xv1-xv3) + (uv5-uv6)*(xc3 - xc0))/A3;  
+    
+//      // Compute face gradients: velocity
+//     const dfloat dvfdx1 = 0.5*( (vc1-vc0)*(yv2-yv1) + (vv1-vv2)*(yc1 - yc0))/A1;  
+//     const dfloat dvfdy1 =-0.5*( (vc1-vc0)*(xv2-xv1) + (vv1-vv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dvfdx2 = 0.5*( (vc2-vc0)*(yv3-yv2) + (vv3-vv4)*(yc2 - yc0))/A2;  
+//     const dfloat dvfdy2 =-0.5*( (vc2-vc0)*(xv3-xv2) + (vv3-vv4)*(xc2 - xc0))/A2;  
+
+//     const dfloat dvfdx3 = 0.5*( (vc3-vc0)*(yv1-yv3) + (vv5-vv6)*(yc3 - yc0))/A3;  
+//     const dfloat dvfdy3 =-0.5*( (vc3-vc0)*(xv1-xv3) + (vv5-vv6)*(xc3 - xc0))/A3;  
+    
+//     // Compute face gradients: velocity
+//     const dfloat dpfdx1 = 0.5*( (pc1-pc0)*(yv2-yv1) + (pv1-pv2)*(yc1 - yc0))/A1;  
+//     const dfloat dpfdy1 =-0.5*( (pc1-pc0)*(xv2-xv1) + (pv1-pv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dpfdx2 = 0.5*( (pc2-pc0)*(yv3-yv2) + (pv3-pv4)*(yc2 - yc0))/A2;  
+//     const dfloat dpfdy2 =-0.5*( (pc2-pc0)*(xv3-xv2) + (pv3-pv4)*(xc2 - xc0))/A2;  
+
+//     const dfloat dpfdx3 = 0.5*( (pc3-pc0)*(yv1-yv3) + (pv5-pv6)*(yc3 - yc0))/A3;  
+//     const dfloat dpfdy3 =-0.5*( (pc3-pc0)*(xv1-xv3) + (pv5-pv6)*(xc3 - xc0))/A3;  
+
+  
+//     // Get gradients at cell centers
+//     const dfloat drdx0 = (A1*drfdx1 + A2*drfdx2 + A3*drfdx3)/(A1 + A2 + A3); 
+//     const dfloat drdy0 = (A1*drfdy1 + A2*drfdy2 + A3*drfdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dudx0 = (A1*dufdx1 + A2*dufdx2 + A3*dufdx3)/(A1 + A2 + A3); 
+//     const dfloat dudy0 = (A1*dufdy1 + A2*dufdy2 + A3*dufdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dvdx0 = (A1*dvfdx1 + A2*dvfdx2 + A3*dvfdx3)/(A1 + A2 + A3); 
+//     const dfloat dvdy0 = (A1*dvfdy1 + A2*dvfdy2 + A3*dvfdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dpdx0 = (A1*dpfdx1 + A2*dpfdx2 + A3*dpfdx3)/(A1 + A2 + A3); 
+//     const dfloat dpdy0 = (A1*dpfdy1 + A2*dpfdy2 + A3*dpfdy3)/(A1 + A2 + A3); 
+
+//     // if(e0<400 && e0>300){
+//     // if( bc1 == 1 || bc2==1 || bc3==1){
+//     // if(e0==196){
+//       // printf("XC0= %d %d %d %d %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, xc0, yc0, xc1, yc1, xc2, yc2, xc3, yc3);
+//     // printf("DR= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, drfdx1, drfdx2, drfdx3, drfdy1, drfdy2, drfdy3, drdx0, drdy0);
+//     // printf("DU= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dufdx1, dufdx2, dufdx3, dufdy1, dufdy2, dufdy3, dudx0, dudy0);
+//     // printf("DV= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dvfdx1, dvfdx2, dvfdx3, dvfdy1, dvfdy2, dvfdy3, dvdx0, dvdy0);
+//     // printf("DP= %d %d %d %d %g  %g %g  %g %g %g %g %g \n", e0, bc1, bc2, bc3, dpfdx1, dpfdx2, dpfdx3, dpfdy1, dpfdy2, dpfdy3, dpdx0, dpdy0);
+//   // }
+//   // }
+
+
+//     // Store gradients
+//     dq[e0*p_Nfields*p_dim + 0] = drdx0; 
+//     dq[e0*p_Nfields*p_dim + 1] = drdy0; 
+//     dq[e0*p_Nfields*p_dim + 2] = dudx0; 
+//     dq[e0*p_Nfields*p_dim + 3] = dudy0; 
+//     dq[e0*p_Nfields*p_dim + 4] = dvdx0; 
+//     dq[e0*p_Nfields*p_dim + 5] = dvdy0; 
+//     dq[e0*p_Nfields*p_dim + 6] = dpdx0; 
+//     dq[e0*p_Nfields*p_dim + 7] = dpdy0; 
+
+  
+//     const dlong ebase = e0*p_Nfields*p_dim*p_Nfaces; 
+//     const dlong fbase = p_Nfields*p_dim; 
+//     // Store gradients
+//     dqf[ebase + 0*fbase + 0] = drfdx1; 
+//     dqf[ebase + 0*fbase + 1] = drfdy1; 
+//     dqf[ebase + 0*fbase + 2] = dufdx1; 
+//     dqf[ebase + 0*fbase + 3] = dufdy1; 
+//     dqf[ebase + 0*fbase + 4] = dvfdx1; 
+//     dqf[ebase + 0*fbase + 5] = dvfdy1; 
+//     dqf[ebase + 0*fbase + 6] = dpfdx1; 
+//     dqf[ebase + 0*fbase + 7] = dpfdy1; 
+
+//     // Store gradients
+//     dqf[ebase + 1*fbase + 0] = drfdx2; 
+//     dqf[ebase + 1*fbase + 1] = drfdy2; 
+//     dqf[ebase + 1*fbase + 2] = dufdx2; 
+//     dqf[ebase + 1*fbase + 3] = dufdy2; 
+//     dqf[ebase + 1*fbase + 4] = dvfdx2; 
+//     dqf[ebase + 1*fbase + 5] = dvfdy2; 
+//     dqf[ebase + 1*fbase + 6] = dpfdx2; 
+//     dqf[ebase + 1*fbase + 7] = dpfdy2; 
+
+//     // Store gradients
+//     dqf[ebase + 2*fbase + 0] = drfdx3; 
+//     dqf[ebase + 2*fbase + 1] = drfdy3; 
+//     dqf[ebase + 2*fbase + 2] = dufdx3; 
+//     dqf[ebase + 2*fbase + 3] = dufdy3; 
+//     dqf[ebase + 2*fbase + 4] = dvfdx3; 
+//     dqf[ebase + 2*fbase + 5] = dvfdy3; 
+//     dqf[ebase + 2*fbase + 6] = dpfdx3; 
+//     dqf[ebase + 2*fbase + 7] = dpfdy3; 
+
+//   // }
+// }
+// }
+
+
+// @kernel void cnsLimiterReconstructTri2D(const dlong N, 
+//                                              @restrict const dlong *eList, 
+//                                              @restrict const int *EToE, 
+//                                              @restrict const int *EToB, 
+//                                              @restrict const dfloat *svgeo, 
+//                                              @restrict const dfloat *DX, 
+//                                              @restrict const dfloat *x, 
+//                                              @restrict const dfloat *y, 
+//                                              @restrict const  dfloat * pCoeff,
+//                                              const dfloat time, 
+//                                              @restrict const dfloat *qc,
+//                                              @restrict const dfloat *dqf,
+//                                              @restrict const dfloat *dq,
+//                                              @restrict       dfloat *Q){
+// for(dlong e0=0; e0<N; ++e0; @tile(p_blockSize, @outer, @inner)){
+//  const dlong etype = eList[e0]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype ==s_FVFV_TYPE){
+//     const dfloat gamma  = pCoeff[p_GMID]; 
+//     // load cell averages
+//     dfloat rc0, uc0, vc0, pc0, xc0, yc0, sa0; 
+//     readCellAverages(e0, svgeo, qc, &xc0, &yc0, &sa0, &rc0, &uc0, &vc0, &pc0); 
+
+//     const dlong e1 = EToE[e0*p_Nfaces + 0];      
+//     const dlong e2 = EToE[e0*p_Nfaces + 1];      
+//     const dlong e3 = EToE[e0*p_Nfaces + 2]; 
+
+//     // apply boundary condition
+//     const int bc1 = EToB[e0*p_Nfaces+ 0];
+//     const int bc2 = EToB[e0*p_Nfaces+ 1];
+//     const int bc3 = EToB[e0*p_Nfaces+ 2];
+
+//     // Read derivatives
+//     dfloat drdx0 = dq[e0*p_Nfields*p_dim + 0]; 
+//     dfloat drdy0 = dq[e0*p_Nfields*p_dim + 1]; 
+//     dfloat dudx0 = dq[e0*p_Nfields*p_dim + 2]; 
+//     dfloat dudy0 = dq[e0*p_Nfields*p_dim + 3]; 
+//     dfloat dvdx0 = dq[e0*p_Nfields*p_dim + 4]; 
+//     dfloat dvdy0 = dq[e0*p_Nfields*p_dim + 5]; 
+//     dfloat dpdx0 = dq[e0*p_Nfields*p_dim + 6]; 
+//     dfloat dpdy0 = dq[e0*p_Nfields*p_dim + 7];  
+
+//     // Read derivatives
+//     dfloat drdx1 = dq[e1*p_Nfields*p_dim + 0]; 
+//     dfloat drdy1 = dq[e1*p_Nfields*p_dim + 1]; 
+//     dfloat dudx1 = dq[e1*p_Nfields*p_dim + 2]; 
+//     dfloat dudy1 = dq[e1*p_Nfields*p_dim + 3]; 
+//     dfloat dvdx1 = dq[e1*p_Nfields*p_dim + 4]; 
+//     dfloat dvdy1 = dq[e1*p_Nfields*p_dim + 5]; 
+//     dfloat dpdx1 = dq[e1*p_Nfields*p_dim + 6]; 
+//     dfloat dpdy1 = dq[e1*p_Nfields*p_dim + 7];  
+
+//     // Read derivatives
+//     dfloat drdx2 = dq[e2*p_Nfields*p_dim + 0]; 
+//     dfloat drdy2 = dq[e2*p_Nfields*p_dim + 1]; 
+//     dfloat dudx2 = dq[e2*p_Nfields*p_dim + 2]; 
+//     dfloat dudy2 = dq[e2*p_Nfields*p_dim + 3]; 
+//     dfloat dvdx2 = dq[e2*p_Nfields*p_dim + 4]; 
+//     dfloat dvdy2 = dq[e2*p_Nfields*p_dim + 5]; 
+//     dfloat dpdx2 = dq[e2*p_Nfields*p_dim + 6]; 
+//     dfloat dpdy2 = dq[e2*p_Nfields*p_dim + 7];  
+
+//     // Read derivatives
+//     dfloat drdx3 = dq[e3*p_Nfields*p_dim + 0]; 
+//     dfloat drdy3 = dq[e3*p_Nfields*p_dim + 1]; 
+//     dfloat dudx3 = dq[e3*p_Nfields*p_dim + 2]; 
+//     dfloat dudy3 = dq[e3*p_Nfields*p_dim + 3]; 
+//     dfloat dvdx3 = dq[e3*p_Nfields*p_dim + 4]; 
+//     dfloat dvdy3 = dq[e3*p_Nfields*p_dim + 5]; 
+//     dfloat dpdx3 = dq[e3*p_Nfields*p_dim + 6]; 
+//     dfloat dpdy3 = dq[e3*p_Nfields*p_dim + 7];  
+
+//     const dlong ebase = e0*p_Nfields*p_dim*p_Nfaces; 
+//     const dlong fbase = p_Nfields*p_dim; 
+//     if(bc1>0){
+//       drdx1 = dqf[ebase + 0*fbase  +  0]; 
+//       drdy1 = dqf[ebase + 0*fbase  +  1]; 
+//       dudx1 = dqf[ebase + 0*fbase  +  2]; 
+//       dudy1 = dqf[ebase + 0*fbase  +  3]; 
+//       dvdx1 = dqf[ebase + 0*fbase  +  4]; 
+//       dvdy1 = dqf[ebase + 0*fbase  +  5]; 
+//       dpdx1 = dqf[ebase + 0*fbase  +  6]; 
+//       dpdy1 = dqf[ebase + 0*fbase  +  7];  
+//       // printf("e0 = %d and bc= %d and dudx= %g\n", e0, bc1, dudx1);
+//     }
+
+//     if(bc2>0){
+//       drdx2 = dqf[ebase + 1*fbase  +  0]; 
+//       drdy2 = dqf[ebase + 1*fbase  +  1]; 
+//       dudx2 = dqf[ebase + 1*fbase  +  2]; 
+//       dudy2 = dqf[ebase + 1*fbase  +  3]; 
+//       dvdx2 = dqf[ebase + 1*fbase  +  4]; 
+//       dvdy2 = dqf[ebase + 1*fbase  +  5]; 
+//       dpdx2 = dqf[ebase + 1*fbase  +  6]; 
+//       dpdy2 = dqf[ebase + 1*fbase  +  7];  
+//        // printf("e0 = %d and bc= %d and dudx= %g\n", e0, bc2, dudx2);
+//     }
+
+//      if(bc3>0){
+//       drdx3 = dqf[ebase + 2*fbase  +  0]; 
+//       drdy3 = dqf[ebase + 2*fbase  +  1]; 
+//       dudx3 = dqf[ebase + 2*fbase  +  2]; 
+//       dudy3 = dqf[ebase + 2*fbase  +  3]; 
+//       dvdx3 = dqf[ebase + 2*fbase  +  4]; 
+//       dvdy3 = dqf[ebase + 2*fbase  +  5]; 
+//       dpdx3 = dqf[ebase + 2*fbase  +  6]; 
+//       dpdy3 = dqf[ebase + 2*fbase  +  7];  
+//        // printf("e0 = %d and bc= %d and dudx= %g\n", e0, bc3, dudx3);
+//     }
+
+//     const dfloat epse = 1E-10;
+//     dfloat fac, g1, g2, g3, w1, w2, w3; 
+//     // dfloat facr, gr1, gr2, gr3, wr1, wr2, wr3; 
+  
+//     // Find weights for density
+//     g1  = drdx1*drdx1 +  drdy1*drdy1; 
+//     g2  = drdx2*drdx2 +  drdy2*drdy2; 
+//     g3  = drdx3*drdx3 +  drdy3*drdy3; 
+//     fac = g1*g1 + g2*g2 + g3*g3;
+
+//     w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+//     w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+//     w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+
+//     dfloat ldrdx = w1*drdx1 + w2* drdx2 +w3* drdx3; 
+//     dfloat ldrdy = w1*drdy1 + w2* drdy2 +w3* drdy3; 
+//     // //  if(e0<400 && e0>300){
+//     // if( bc1 == 1 || bc2==1 || bc3==1){
+//     // if(e0==196){
+//     // printf("DR= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldrdx, ldrdy);
+//     // }
+
+//     // // Find weights for density
+//     // gr1  = drdx1*drdx1 +  drdy1*drdy1; 
+//     // gr2  = drdx2*drdx2 +  drdy2*drdy2; 
+//     // gr3  = drdx3*drdx3 +  drdy3*drdy3; 
+//     // facr = gr1*gr1 + gr2*gr2 + gr3*gr3;
+
+//     // wr1 = (gr2 * gr3 + epse)/(facr+3.0*epse);
+//     // wr2 = (gr1 * gr3 + epse)/(facr+3.0*epse);
+//     // wr3 = (gr1 * gr2 + epse)/(facr+3.0*epse);
+
+//     // dfloat ldrdx = wr1*drdx1 + wr2* drdx2 +wr3* drdx3; 
+//     // dfloat ldrdy = wr1*drdy1 + wr2* drdy2 +wr3* drdy3; 
+
+//     // Find weights for u-velocity
+//     g1  = dudx1*dudx1 +  dudy1*dudy1; 
+//     g2  = dudx2*dudx2 +  dudy2*dudy2; 
+//     g3  = dudx3*dudx3 +  dudy3*dudy3; 
+//     fac = g1*g1 + g2*g2 + g3*g3;
+
+//     w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+//     w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+//     w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+//     dfloat ldudx = w1*dudx1 + w2*dudx2 + w3*dudx3; 
+//     dfloat ldudy = w1*dudy1 + w2*dudy2 + w3*dudy3; 
+
+//     // if(e0==196){
+//     // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldudx, ldudy);
+//     // }
+
+//       // Find weights for u-velocity
+//     g1  = dvdx1*dvdx1 +  dvdy1*dvdy1; 
+//     g2  = dvdx2*dvdx2 +  dvdy2*dvdy2; 
+//     g3  = dvdx3*dvdx3 +  dvdy3*dvdy3; 
+//     fac = g1*g1 + g2*g2 + g3*g3;
+
+//     w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+//     w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+//     w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+//     dfloat ldvdx = w1*dvdx1 + w2* dvdx2 +w3* dvdx3; 
+//     dfloat ldvdy = w1*dvdy1 + w2* dvdy2 +w3* dvdy3; 
+
+//     // if(e0==196){
+//     // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldvdx, ldvdy);
+//     // }
+
+//     // Find weights for u-velocity
+//     g1  = dpdx1*dpdx1 +  dpdy1*dpdy1; 
+//     g2  = dpdx2*dpdx2 +  dpdy2*dpdy2; 
+//     g3  = dpdx3*dpdx3 +  dpdy3*dpdy3; 
+//     fac = g1*g1 + g2*g2 + g3*g3;
+
+//     w1 = (g2 * g3 + epse)/(fac+3.0*epse);
+//     w2 = (g1 * g3 + epse)/(fac+3.0*epse);
+//     w3 = (g1 * g2 + epse)/(fac+3.0*epse);
+    
+//     dfloat ldpdx = w1*dpdx1 + w2*dpdx2 +w3*dpdx3; 
+//     dfloat ldpdy = w1*dpdy1 + w2*dpdy2 +w3*dpdy3; 
+
+//     // if(e0==196){
+//     // printf("DU= %d %d %d %d %g %g %g %g %g %g %g %g\n", e0, bc1, bc2, bc3, g1, g2, g3, w1, w2, w3, ldpdx, ldpdy);
+//     // }
+
+//   //   if(e0==329){
+//   //   // printf("R= %d %g %g  %g %g  %g %g \n", e0, rc0, w1, w2, w3, ldpdx, ldpdy);
+//   //   // printf("R= %d %g %g  %g %g \n", e0, g1, g2, g3, fac);
+//   // }
+
+
+
+//   // // //  if(e0<400 && e0>300){
+//   //   if( bc1 == 1 || bc2==1 || bc3==1){
+//   //   // if(e0==329){
+//   //   printf("DL= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,ldrdx, ldrdy, ldudx, ldudy, ldvdx, ldvdy);
+//   //   printf("WR= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3, gr1, gr2, gr3, wr1, wr2, wr3);
+//   //   printf("DR= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3, drdx1, drdx2, drdx3, drdy1, drdy2, drdy3);
+//   //   // printf("DRE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,drdx1, drdx2, drdx3, drdy1, drdy2, drdy3);
+//   //   // printf("DRE= %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, gr1, gr2, gr3, wr1, wr2, wr3, facr, epse);
+//   //   // printf("DUE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dudx1, dudx2, dudx3, dudy1, dudy2, dudy3);
+//   //   // printf("DVE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dvdx1, dvdx2, dvdx3, dvdy1, dvdy2, dvdy3);
+//   //   // printf("DPE= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dpdx1, dpdx2, dpdx3, dpdy1, dpdy2, dpdy3);
+//   //   // printf("DCE0= %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3,drdx0, drdy0, dudx0, dudy0, dvdx0, dvdy0, dpdx0, dpdy0);
+//   // // }
+//   // }
+
+    
+//     int pos  = 0; 
+//     dfloat rrn , run, rvn, rpn; 
+//     // first recontruct density to check positivity
+//     for(int i=0; i<p_Np; i++){
+//       const dfloat dx = DX[e0*p_Np*p_dim + i + 0*p_Np]; 
+//       const dfloat dy = DX[e0*p_Np*p_dim + i + 1*p_Np];
+//       rrn = rc0 + dx*ldrdx + dy*ldrdy; 
+
+//       if(e0==196){
+//         printf("DU= %d %g %g  %g %g %g %g\n", e0, dx, dy, rc0, ldrdx, ldrdy, rrn);
+//        }
+
+//       // int skr = 0;
+//       // if(rrn<0){ 
+//       //   while(rrn>0){ 
+//       //     printf("correcing r = %d %g\n", skr, rc0);
+//       //     ldrdx *=0.5; ldrdy*=0.5; rrn =  rc0 + dx*ldrdx + dy*ldrdy;
+//       //     skr++; 
+//       //     if(skr==10){rrn = rc0; break;}
+//       //     } 
+//       // }
+//       // while(rpn>0){ldpdx *=0.5; ldpdy*=0.5; rpn =  pc0 + dx*ldpdx + dy*ldpdy;}
+//       // rrn = rrn > 0 ? rrn: rc0; 
+//       // rpn = rpn > 0 ? rpn: pc0; 
+//         rpn =  pc0 + dx*ldpdx + dy*ldpdy;
+//         // rrn = rc0 + dx*ldrdx + dy*ldrdy; 
+//         run = uc0 + dx*ldudx + dy*ldudy; 
+//         rvn = vc0 + dx*ldvdx + dy*ldvdy; 
+//         // rpn = pc0 + dx*ldpdx + dy*ldpdy; 
+
+//         Q[e0*p_Np*p_Nfields + i +0*p_Np] = rrn; 
+//         Q[e0*p_Np*p_Nfields + i +1*p_Np] = rrn*run; 
+//         Q[e0*p_Np*p_Nfields + i +2*p_Np] = rrn*rvn; 
+//         Q[e0*p_Np*p_Nfields + i +3*p_Np] = rpn/ (gamma-1.0) + 0.5*rrn*(run*run+rvn*rvn);  
+
+
+//   //   if(e0==329){
+//   //   printf("RN= %d %g %g  %g %g  %g %g  %g %g %g\n", e0, dx, dy , rc0, wr1, wr2, wr3,ldrdx, ldrdy, rrn);
+//   // }
+
+//     // // Read derivatives
+//     // dfloat drdx0 = dq[e0*p_Nfields*p_dim + 0]; 
+//     // dfloat drdy0 = dq[e0*p_Nfields*p_dim + 1]; 
+//     // dfloat dudx0 = dq[e0*p_Nfields*p_dim + 2]; 
+//     // dfloat dudy0 = dq[e0*p_Nfields*p_dim + 3]; 
+//     // dfloat dvdx0 = dq[e0*p_Nfields*p_dim + 4]; 
+//     // dfloat dvdy0 = dq[e0*p_Nfields*p_dim + 5]; 
+//     // dfloat dpdx0 = dq[e0*p_Nfields*p_dim + 6]; 
+//     // dfloat dpdy0 = dq[e0*p_Nfields*p_dim + 7];  
+
+
+//         // Q[e0*p_Np*p_Nfields + i +0*p_Np] = 1.0; 
+//         // Q[e0*p_Np*p_Nfields + i +1*p_Np] = dudx0  ; 
+//         // Q[e0*p_Np*p_Nfields + i +2*p_Np] = dudy0 ; 
+//         // Q[e0*p_Np*p_Nfields + i +3*p_Np] = dudy0; 
+//       }
+
+      
+//     // } 
+//   }
+
+//   }
+
+
+
+
+
+// @kernel void cnsLimiterUnlimitedGradientTri2D(const dlong N, 
+//                                              @restrict const dlong *eList, 
+//                                              @restrict const int *EToE, 
+//                                              @restrict const int *EToB, 
+//                                              @restrict const int *vertexNodes, 
+//                                              @restrict const dfloat *sgeo, 
+//                                              @restrict const dfloat *svgeo, 
+//                                              @restrict const dfloat *x, 
+//                                              @restrict const dfloat *y, 
+//                                              @restrict const  dfloat * pCoeff,
+//                                              const dfloat time, 
+//                                              @restrict const dfloat *qc,
+//                                              @restrict const dfloat *qv,
+//                                              @restrict       dfloat *dqf,
+//                                              @restrict       dfloat *dq){
+// for(dlong e0=0; e0<N; ++e0; @tile(p_blockSize, @outer, @inner)){
+//   const dlong etype = eList[e0]; 
+//   // Troubled elelemnts and their neighbors
+//   // if(etype > 0){
+//     const dfloat gamma  = pCoeff[p_GMID]; 
+//     const dfloat R      = pCoeff[p_RRID]; 
+//     const dfloat CP     = pCoeff[p_CPID]; 
+//     const dfloat CV     = pCoeff[p_CVID]; 
+//     const dfloat mu     = pCoeff[p_MUID]; // bulk viscosity
+
+//     const int e1 = EToE[e0*p_Nfaces + 0];      
+//     const int e2 = EToE[e0*p_Nfaces + 1];      
+//     const int e3 = EToE[e0*p_Nfaces + 2]; 
+
+//     // apply boundary condition
+//     const int bc1 = EToB[e0*p_Nfaces+ 0];
+//     const int bc2 = EToB[e0*p_Nfaces+ 1];
+//     const int bc3 = EToB[e0*p_Nfaces+ 2];
+
+
+//     // load cell averages
+//     dfloat rc0, uc0, vc0, pc0, xc0, yc0, sa0; 
+//     dfloat rc1, uc1, vc1, pc1, xc1, yc1, sa1; 
+//     dfloat rc2, uc2, vc2, pc2, xc2, yc2, sa2;
+//     dfloat rc3, uc3, vc3, pc3, xc3, yc3, sa3;
+//     //
+//     readCellAverages(e0, svgeo, qc, &xc0, &yc0, &sa0, &rc0, &uc0, &vc0, &pc0); 
+//     readCellAverages(e1, svgeo, qc, &xc1, &yc1, &sa1, &rc1, &uc1, &vc1, &pc1);      
+//     readCellAverages(e2, svgeo, qc, &xc2, &yc2, &sa2, &rc2, &uc2, &vc2, &pc2);    
+//     readCellAverages(e3, svgeo, qc, &xc3, &yc3, &sa3, &rc3, &uc3, &vc3, &pc3);  
+
+//     // Reflect element and apply bc
+//     if(bc1>0){
+//       applyCellBC(e0, time, 0, bc1, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc1, &yc1, &rc1, &uc1, &vc1, &pc1); 
+//       sa1 = sa0; 
+//       // printf(" %d %d %g  %g %g  %g %g %g  %g %g\n", e0, bc1, rc0, uc0, vc0, pc0, rc1, uc1, vc1, pc1);
+//     }
+
+//     if(bc2>0){
+//        applyCellBC(e0, time, 1, bc2, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc2, &yc2, &rc2, &uc2, &vc2, &pc2);
+//       // printf(" %d %d %g  %g %g  %g %g %g  %g %g\n", e0, bc2, rc0, uc0, vc0, pc0, rc2, uc2, vc2, pc2);
+//        sa2 = sa0; 
+//     }
+
+//     if(bc3>0){
+//        applyCellBC(e0, time, 2, bc3, sgeo, gamma, R, CP, CV, mu, 
+//                  xc0, yc0, sa0, rc0, uc0, vc0, pc0, &xc3, &yc3, &rc3, &uc3, &vc3, &pc3);
+//       // printf(" %d %d %g  %g %g  %g %g %g  %g %g\n", e0, bc3, rc0, uc0, vc0, pc0, rc3, uc3, vc3, pc3);
+//        sa3 = sa0; 
+
+//     }
+
+//   // Get Vertex solution, note that conservative and C0
+//     const int n1 = vertexNodes[0];
+//     const int n2 = vertexNodes[1];
+//     const int n3 = vertexNodes[2];
+
+//     dfloat xv1, yv1, rv1, uv1, vv1, pv1; 
+//     dfloat xv2, yv2, rv2, uv2, vv2, pv2; 
+//     dfloat xv3, yv3, rv3, uv3, vv3, pv3; 
+
+//     readVertexValues(e0, gamma, 0, n1, qv, x, y, &xv1, &yv1, &rv1, &uv1, &vv1, &pv1);
+//     readVertexValues(e0, gamma, 1, n2, qv, x, y, &xv2, &yv2, &rv2, &uv2, &vv2, &pv2);
+//     readVertexValues(e0, gamma, 2, n3, qv, x, y, &xv3, &yv3, &rv3, &uv3, &vv3, &pv3);
+
+//     // Compute Gradients
+//     const dfloat A1 = (sa0 + sa1);  // const dfloat iA1 = 1./A1; 
+//     const dfloat A2 = (sa0 + sa2);  // const dfloat iA2 = 1./A2; 
+//     const dfloat A3 = (sa0 + sa3);  // const dfloat iA3 = 1./A3;
+
+//     // Compute face gradients: velocity
+//     const dfloat drfdx1 = 0.5*( (rc1-rc0)*(yv2-yv1) + (rv1-rv2)*(yc1 - yc0))/A1;  
+//     const dfloat drfdy1 =-0.5*( (rc1-rc0)*(xv2-xv1) + (rv1-rv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat drfdx2 = 0.5*( (rc2-rc0)*(yv3-yv2) + (rv2-rv3)*(yc2 - yc0))/A2;  
+//     const dfloat drfdy2 =-0.5*( (rc2-rc0)*(xv3-xv2) + (rv2-rv3)*(xc2 - xc0))/A2;  
+
+//     const dfloat drfdx3 = 0.5*( (rc3-rc0)*(yv1-yv3) + (rv3-rv1)*(yc3 - yc0))/A3;  
+//     const dfloat drfdy3 =-0.5*( (rc3-rc0)*(xv1-xv3) + (rv3-rv1)*(xc3 - xc0))/A3;  
+
+//   //   if(e0<10){
+//   //   printf(" %d %d %d %d %g  %g %g  %g %g %g\n", e0, bc1, bc2, bc3, drfdx1, drfdy1, drfdx2, drfdy2, drfdx3, drfdy3);
+//   // }
+
+//     // Compute face gradients: velocity
+//     const dfloat dufdx1 = 0.5*( (uc1-uc0)*(yv2-yv1) + (uv1-uv2)*(yc1 - yc0))/A1;  
+//     const dfloat dufdy1 =-0.5*( (uc1-uc0)*(xv2-xv1) + (uv1-uv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dufdx2 = 0.5*( (uc2-uc0)*(yv3-yv2) + (uv2-uv3)*(yc2 - yc0))/A2;  
+//     const dfloat dufdy2 =-0.5*( (uc2-uc0)*(xv3-xv2) + (uv2-uv3)*(xc2 - xc0))/A2;  
+
+//     const dfloat dufdx3 = 0.5*( (uc3-uc0)*(yv1-yv3) + (uv3-uv1)*(yc3 - yc0))/A3;  
+//     const dfloat dufdy3 =-0.5*( (uc3-uc0)*(xv1-xv3) + (uv3-uv1)*(xc3 - xc0))/A3;  
+
+//      // Compute face gradients: velocity
+//     const dfloat dvfdx1 = 0.5*( (vc1-vc0)*(yv2-yv1) + (vv1-vv2)*(yc1 - yc0))/A1;  
+//     const dfloat dvfdy1 =-0.5*( (vc1-vc0)*(xv2-xv1) + (vv1-vv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dvfdx2 = 0.5*( (vc2-vc0)*(yv3-yv2) + (vv2-vv3)*(yc2 - yc0))/A2;  
+//     const dfloat dvfdy2 =-0.5*( (vc2-vc0)*(xv3-xv2) + (vv2-vv3)*(xc2 - xc0))/A2;  
+
+//     const dfloat dvfdx3 = 0.5*( (vc3-vc0)*(yv1-yv3) + (vv3-vv1)*(yc3 - yc0))/A3;  
+//     const dfloat dvfdy3 =-0.5*( (vc3-vc0)*(xv1-xv3) + (vv3-vv1)*(xc3 - xc0))/A3;   
+  
+//   // Compute face gradients: velocity
+//     const dfloat dpfdx1 = 0.5*( (pc1-pc0)*(yv2-yv1) + (pv1-pv2)*(yc1 - yc0))/A1;  
+//     const dfloat dpfdy1 =-0.5*( (pc1-pc0)*(xv2-xv1) + (pv1-pv2)*(xc1 - xc0))/A1;  
+
+//     const dfloat dpfdx2 = 0.5*( (pc2-pc0)*(yv3-yv2) + (pv2-pv3)*(yc2 - yc0))/A2;  
+//     const dfloat dpfdy2 =-0.5*( (pc2-pc0)*(xv3-xv2) + (pv2-pv3)*(xc2 - xc0))/A2;  
+
+//     const dfloat dpfdx3 = 0.5*( (pc3-pc0)*(yv1-yv3) + (pv3-pv1)*(yc3 - yc0))/A3;  
+//     const dfloat dpfdy3 =-0.5*( (pc3-pc0)*(xv1-xv3) + (pv3-pv1)*(xc3 - xc0))/A3;  
+
+
+//     // Get gradients at cell centers
+//     const dfloat drdx0 = (A1*drfdx1 + A2*drfdx2 + A3*drfdx3)/(A1 + A2 + A3); 
+//     const dfloat drdy0 = (A1*drfdy1 + A2*drfdy2 + A3*drfdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dudx0 = (A1*dufdx1 + A2*dufdx2 + A3*dufdx3)/(A1 + A2 + A3); 
+//     const dfloat dudy0 = (A1*dufdy1 + A2*dufdy2 + A3*dufdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dvdx0 = (A1*dvfdx1 + A2*dvfdx2 + A3*dvfdx3)/(A1 + A2 + A3); 
+//     const dfloat dvdy0 = (A1*dvfdy1 + A2*dvfdy2 + A3*dvfdy3)/(A1 + A2 + A3); 
+//     //
+//     const dfloat dpdx0 = (A1*dpfdx1 + A2*dpfdx2 + A3*dpfdx3)/(A1 + A2 + A3); 
+//     const dfloat dpdy0 = (A1*dpfdy1 + A2*dpfdy2 + A3*dpfdy3)/(A1 + A2 + A3); 
+
+//   //   // if(e0<400 && e0>300){
+//   //   // if( bc1 == 1 || bc2==1 || bc3==1){
+//   //   if(e0==329){
+//   //   printf("DR= %d %d %d %d %g  %g %g  %g %g %g %g\n", e0, bc1, bc2, bc3,drfdx1, drfdx2, drfdx3, drfdy1, drfdy2, drfdy3, sa3);
+//   //   printf("DU= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dufdx1, dufdx2, dufdx3, dufdy1, dufdy2, dufdy3);
+//   //   printf("DV= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dvfdx1, dvfdx2, dvfdx3, dvfdy1, dvfdy2, dvfdy3);
+//   //   printf("DP= %d %d %d %d %g  %g %g  %g %g %g \n", e0, bc1, bc2, bc3,dpfdx1, dpfdx2, dpfdx3, dpfdy1, dpfdy2, dpfdy3);
+//   //   printf("DC0= %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3,drdx0, drdy0, dudx0, dudy0, dvdx0, dvdy0, dpdx0, dpdy0);
+//   // }
+//   // // }
+
+
+//     // Store gradients
+//     dq[e0*p_Nfields*p_dim + 0] = drdx0; 
+//     dq[e0*p_Nfields*p_dim + 1] = drdy0; 
+//     dq[e0*p_Nfields*p_dim + 2] = dudx0; 
+//     dq[e0*p_Nfields*p_dim + 3] = dudy0; 
+//     dq[e0*p_Nfields*p_dim + 4] = dvdx0; 
+//     dq[e0*p_Nfields*p_dim + 5] = dvdy0; 
+//     dq[e0*p_Nfields*p_dim + 6] = dpdx0; 
+//     dq[e0*p_Nfields*p_dim + 7] = dpdy0; 
+
+//   //   // if(e0<400 && e0>300){
+//   //   if( dufdx1>0.1){
+//   //   // if(e0==109){
+//   //   printf(" X = %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, xc0, yc0, xv1, yv1, xv2, yv2, xv3, yv3);
+//   //   printf(" A = %d %d %d %d %d  %g  %g %g %g\n", e0, e1, e2, e3, etype, sa0, sa1, sa2, sa3);
+//   //   printf(" R = %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, drfdx1, drfdy1, drfdx2, drfdy2, drfdx3, drfdy3, drdx0, drdy0);
+//   //   printf(" U = %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, dufdx1, dufdy1, dufdx2, dufdy2, dufdx3, dufdy3, dudx0, dudy0);
+//   //   printf(" V = %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, dvfdx1, dvfdy1, dvfdx2, dvfdy2, dvfdx3, dvfdy3, dvdx0, dvdy0);
+//   //   printf(" P = %d %d %d %d %g  %g %g  %g %g %g %g %g\n", e0, bc1, bc2, bc3, dpfdx1, dpfdy1, dpfdx2, dpfdy2, dpfdx3, dpfdy3, dpdx0, dpdy0);
+//   // }
+
+//     const dlong ebase = e0*p_Nfields*p_dim*p_Nfaces; 
+//     const dlong fbase = p_Nfields*p_dim; 
+
+//     // Store gradients
+//     dqf[ebase + 0*fbase + 0] = drfdx1; 
+//     dqf[ebase + 0*fbase + 1] = drfdy1; 
+//     dqf[ebase + 0*fbase + 2] = dufdx1; 
+//     dqf[ebase + 0*fbase + 3] = dufdy1; 
+//     dqf[ebase + 0*fbase + 4] = dvfdx1; 
+//     dqf[ebase + 0*fbase + 5] = dvfdy1; 
+//     dqf[ebase + 0*fbase + 6] = dpfdx1; 
+//     dqf[ebase + 0*fbase + 7] = dpfdy1; 
+
+//     // Store gradients
+//     dqf[ebase + 1*fbase + 0] = drfdx2; 
+//     dqf[ebase + 1*fbase + 1] = drfdy2; 
+//     dqf[ebase + 1*fbase + 2] = dufdx2; 
+//     dqf[ebase + 1*fbase + 3] = dufdy2; 
+//     dqf[ebase + 1*fbase + 4] = dvfdx2; 
+//     dqf[ebase + 1*fbase + 5] = dvfdy2; 
+//     dqf[ebase + 1*fbase + 6] = dpfdx2; 
+//     dqf[ebase + 1*fbase + 7] = dpfdy2; 
+
+//     // Store gradients
+//     dqf[ebase + 2*fbase + 0] = drfdx3; 
+//     dqf[ebase + 2*fbase + 1] = drfdy3; 
+//     dqf[ebase + 2*fbase + 2] = dufdx3; 
+//     dqf[ebase + 2*fbase + 3] = dufdy3; 
+//     dqf[ebase + 2*fbase + 4] = dvfdx3; 
+//     dqf[ebase + 2*fbase + 5] = dvfdy3; 
+//     dqf[ebase + 2*fbase + 6] = dpfdx3; 
+//     dqf[ebase + 2*fbase + 7] = dpfdy3; 
+
+//   // }
+// }
+// }

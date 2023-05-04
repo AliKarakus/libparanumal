@@ -36,9 +36,8 @@ SOFTWARE.
                                     @restrict const  dfloat *  x,
                                     @restrict const  dfloat *  y,
                                     @restrict const  dfloat *  z,
+                                    @restrict const  dfloat * pCoeff,
                                     const dfloat t,
-                                    const dfloat mu,
-                                    const dfloat gamma,
                                     @restrict const  dfloat *  q,
                                     @restrict const  dfloat *  gradq,
                                     @restrict dfloat *  rhsq){
@@ -58,6 +57,10 @@ SOFTWARE.
         const dlong  qbase = e*p_Np*p_Nfields + n;
         const dlong id = e*p_Np*p_Ngrads + n;
 
+        dfloat gamma = pCoeff[p_GMID]; // gamma
+        dfloat mu    = pCoeff[p_MUID]; // bulk viscosity
+
+      
         const dfloat r  = q[qbase+0*p_Np];
         const dfloat ru = q[qbase+1*p_Np];
         const dfloat rv = q[qbase+2*p_Np];
@@ -86,6 +89,8 @@ SOFTWARE.
 
 
     for(int n=0;n<p_cubNp;++n;@inner(0)){
+       dfloat gamma = pCoeff[p_GMID]; // gamma
+       dfloat mu    = pCoeff[p_MUID]; // bulk viscosity
       //interpolate to cubature
       dfloat r = 0., ru = 0., rv = 0., E = 0.;
       dfloat dudx = 0., dudy = 0.;
@@ -97,193 +102,37 @@ SOFTWARE.
           ru += cIni*s_q[1][i];
           rv += cIni*s_q[2][i];
           E  += cIni*s_q[3][i];
+
           dudx += cIni*s_gradq[0][i];
           dudy += cIni*s_gradq[1][i];
           dvdx += cIni*s_gradq[2][i];
           dvdy += cIni*s_gradq[3][i];
         }
 
+      const dfloat ir = 1./ r;  
       // primitive variables
-      const dfloat u = ru/r, v = rv/r;
-      const dfloat p  = (gamma-1)*(E-0.5*r*(u*u+v*v));
-
-      const dfloat T11 = 2.0*dudx - 2.0*(dudx+dvdy)/3.0;
-      const dfloat T12 = dudy+dvdx;
-      const dfloat T22 = 2.0*dvdy - 2.0*(dudx+dvdy)/3.0;
-
-      // F0 = ru, G0 = rv
-      s_F[0][n] = -ru;
-      s_G[0][n] = -rv;
-
-      // F1 = 2*mu*T11 - (ru^2+p), G1 = 2*mu*T12 - (rvu)
-      s_F[1][n] = -(ru*u+p) + mu*T11;
-      s_G[1][n] = -(rv*u)   + mu*T12;
-
-      // F2 = 2*mu*T21 - (ruv), G2 = 2*mu*T22 - (rv^2+p)
-      s_F[2][n] = -(rv*u)   + mu*T12;
-      s_G[2][n] = -(rv*v+p) + mu*T22;
-
-      // F3 = mu*(u*T11+v*T12) - (uE+up), G2 = mu*(u*T12+v*T22) - (vE+vp)
-      s_F[3][n] = -u*(E+p) + mu*(u*T11 + v*T12);
-      s_G[3][n] = -v*(E+p) + mu*(u*T12 + v*T22);
-    }
+      const dfloat u = ir*ru, v = ir*rv;
+      const dfloat p  = (gamma-1.0)*(E-0.5*r*(u*u+v*v));
 
 
-    for(int n=0;n<p_cubNp;++n;@inner(0)){
-      if (n<p_Np) {
-        // prefetch geometric factors (constant on triangle)
-        const dfloat drdx = vgeo[e*p_Nvgeo + p_RXID];
-        const dfloat drdy = vgeo[e*p_Nvgeo + p_RYID];
-        const dfloat dsdx = vgeo[e*p_Nvgeo + p_SXID];
-        const dfloat dsdy = vgeo[e*p_Nvgeo + p_SYID];
+      if(p_viscType==2){ // Sutherland
+        //nondimensional temp =  p/(\rho * R)/Tref
+        const dfloat R    = pCoeff[p_RRID]; 
+        const dfloat exp  = pCoeff[p_EXID]; // Exponential term
+        const dfloat tr   = pCoeff[p_TRID]; // 1/Tref 
+        const dfloat ts   = pCoeff[p_TSID]; // Ts/Tref
+        const dfloat cs   = pCoeff[p_CSID]; // precomuted value to simlify
+        const dfloat tn   = p*ir*tr/R; // non-dimensional temp
+        mu                = (tn > ts) ? (mu*pow(tn, exp)*(1.0+ts)/(tn + ts)) : mu*tn*cs;  
+        // mu  = mu*pow(tn, exp)*(1.0+ts)/(tn + ts);  
+      }else if(p_viscType==3){ // Powerlaw
 
-        dfloat df0dr = 0.f, df0ds = 0.f;
-        dfloat df1dr = 0.f, df1ds = 0.f;
-        dfloat df2dr = 0.f, df2ds = 0.f;
-        dfloat df3dr = 0.f, df3ds = 0.f;
-        dfloat dg0dr = 0.f, dg0ds = 0.f;
-        dfloat dg1dr = 0.f, dg1ds = 0.f;
-        dfloat dg2dr = 0.f, dg2ds = 0.f;
-        dfloat dg3dr = 0.f, dg3ds = 0.f;
-
-        #pragma unroll p_cubNp
-          for(int i=0;i<p_cubNp;++i){
-            const dfloat cDrni = cubPDT[n+i*p_Np+0*p_cubNp*p_Np];
-            const dfloat cDsni = cubPDT[n+i*p_Np+1*p_cubNp*p_Np];
-
-            df0dr += cDrni*s_F[0][i];
-            df1dr += cDrni*s_F[1][i];
-            df2dr += cDrni*s_F[2][i];
-            df3dr += cDrni*s_F[3][i];
-            df0ds += cDsni*s_F[0][i];
-            df1ds += cDsni*s_F[1][i];
-            df2ds += cDsni*s_F[2][i];
-            df3ds += cDsni*s_F[3][i];
-
-            dg0dr += cDrni*s_G[0][i];
-            dg1dr += cDrni*s_G[1][i];
-            dg2dr += cDrni*s_G[2][i];
-            dg3dr += cDrni*s_G[3][i];
-            dg0ds += cDsni*s_G[0][i];
-            dg1ds += cDsni*s_G[1][i];
-            dg2ds += cDsni*s_G[2][i];
-            dg3ds += cDsni*s_G[3][i];
-          }
-
-        const dfloat rhsq0 = drdx*df0dr + dsdx*df0ds + drdy*dg0dr + dsdy*dg0ds;
-        const dfloat rhsq1 = drdx*df1dr + dsdx*df1ds + drdy*dg1dr + dsdy*dg1ds;
-        const dfloat rhsq2 = drdx*df2dr + dsdx*df2ds + drdy*dg2dr + dsdy*dg2ds;
-        const dfloat rhsq3 = drdx*df3dr + dsdx*df3ds + drdy*dg3dr + dsdy*dg3ds;
-
-        const dlong base = e*p_Np*p_Nfields + n;
-
-        // move to rhs
-        rhsq[base+0*p_Np] = -rhsq0;
-        rhsq[base+1*p_Np] = -rhsq1+fx;
-        rhsq[base+2*p_Np] = -rhsq2+fy;
-        rhsq[base+3*p_Np] = -rhsq3;
       }
-    }
-  }
-}
 
+      const dfloat T11 = mu*(2.0*dudx - 2.0*(dudx+dvdy)/3.0);
+      const dfloat T12 = mu*(dudy+dvdx);
+      const dfloat T22 = mu*(2.0*dvdy - 2.0*(dudx+dvdy)/3.0);
 
-// Compressible Navier-Stokes
-@kernel void cnsCubatureVolumeADiffPhysicalTri2D(const dlong Nelements,
-                                                @restrict const  dfloat *  vgeo,
-                                                @restrict const  dfloat *  cubvgeo,
-                                                @restrict const  dfloat *  cubD,
-                                                @restrict const  dfloat *  cubPDT,
-                                                @restrict const  dfloat *  cubInterp,
-                                                @restrict const  dfloat *  cubProject,
-                                                @restrict const  dfloat *  x,
-                                                @restrict const  dfloat *  y,
-                                                @restrict const  dfloat *  z,
-                                                const dfloat t,
-                                                const dfloat mu,
-                                                @restrict const  dfloat *  muA,
-                                                const dfloat gamma,
-                                                @restrict const  dfloat *  q,
-                                                @restrict const  dfloat *  gradq,
-                                                @restrict dfloat *  rhsq){
-
-  for(dlong e=0;e<Nelements;++e;@outer(0)){
-
-    @shared dfloat s_q[p_Nfields][p_Np];
-    @shared dfloat s_gradq[p_Ngrads][p_Np];
-
-    @shared dfloat s_F[p_Nfields][p_cubNp];
-    @shared dfloat s_G[p_Nfields][p_cubNp];
-
-    @shared dfloat s_mu[p_Np];
-
-    @exclusive dfloat fx, fy;
-
-    for(int n=0;n<p_cubNp;++n;@inner(0)){      // for all nodes in this element
-      if(n<p_Np){
-        const dlong  qbase = e*p_Np*p_Nfields + n;
-        const dlong id = e*p_Np*p_Ngrads + n;
-
-        const dfloat r  = q[qbase+0*p_Np];
-        const dfloat ru = q[qbase+1*p_Np];
-        const dfloat rv = q[qbase+2*p_Np];
-        const dfloat E  = q[qbase+3*p_Np];
-
-        // primitive variables (velocity)
-        const dfloat u = ru/r, v = rv/r;
-        const dfloat p = (gamma-1)*(E-0.5*r*(u*u+v*v));
-
-        s_q[0][n] = r;
-        s_q[1][n] = ru;
-        s_q[2][n] = rv;
-        s_q[3][n] = E;
-
-        s_gradq[0][n] = gradq[id+0*p_Np];
-        s_gradq[1][n] = gradq[id+1*p_Np];
-        s_gradq[2][n] = gradq[id+2*p_Np];
-        s_gradq[3][n] = gradq[id+3*p_Np];
-
-        // read viscosity and add to bulk viscosity
-        const dfloat mun = muA[e*p_Np + n] + mu; 
-        s_mu[n] = mun; 
-
-        //Body force contribution
-        fx = 0.0; fy = 0.0;
-        cnsBodyForce2D(gamma, mun, t, x[e*p_Np+n], y[e*p_Np+n], r, u, v, p, &fx, &fy);
-        fx *= r; fy *= r;
-      }
-    }
-
-
-    for(int n=0;n<p_cubNp;++n;@inner(0)){
-      //interpolate to cubature
-      dfloat r = 0., ru = 0., rv = 0., E = 0.;
-      dfloat dudx = 0., dudy = 0.;
-      dfloat dvdx = 0., dvdy = 0.;
-      dfloat r_mu = 0.;
-      #pragma unroll p_Np
-        for(int i=0;i<p_Np;++i){
-          const dfloat cIni = cubInterp[n+i*p_cubNp];
-          r  += cIni*s_q[0][i];
-          ru += cIni*s_q[1][i];
-          rv += cIni*s_q[2][i];
-          E  += cIni*s_q[3][i];
-          dudx += cIni*s_gradq[0][i];
-          dudy += cIni*s_gradq[1][i];
-          dvdx += cIni*s_gradq[2][i];
-          dvdy += cIni*s_gradq[3][i];
-
-          r_mu += cIni*s_mu[i];
-
-        }
-
-      // primitive variables
-      const dfloat u = ru/r, v = rv/r;
-      const dfloat p  = (gamma-1)*(E-0.5*r*(u*u+v*v));
-
-      const dfloat T11 = r_mu*( 2.0*dudx - 2.0*(dudx+dvdy)/3.0);
-      const dfloat T12 = r_mu*(dudy+dvdx);
-      const dfloat T22 = r_mu*(2.0*dvdy - 2.0*(dudx+dvdy)/3.0);
 
       // F0 = ru, G0 = rv
       s_F[0][n] = -ru;
@@ -315,6 +164,7 @@ SOFTWARE.
         dfloat df1dr = 0.f, df1ds = 0.f;
         dfloat df2dr = 0.f, df2ds = 0.f;
         dfloat df3dr = 0.f, df3ds = 0.f;
+        
         dfloat dg0dr = 0.f, dg0ds = 0.f;
         dfloat dg1dr = 0.f, dg1ds = 0.f;
         dfloat dg2dr = 0.f, dg2ds = 0.f;
@@ -329,6 +179,7 @@ SOFTWARE.
             df1dr += cDrni*s_F[1][i];
             df2dr += cDrni*s_F[2][i];
             df3dr += cDrni*s_F[3][i];
+            
             df0ds += cDsni*s_F[0][i];
             df1ds += cDsni*s_F[1][i];
             df2ds += cDsni*s_F[2][i];
@@ -338,6 +189,7 @@ SOFTWARE.
             dg1dr += cDrni*s_G[1][i];
             dg2dr += cDrni*s_G[2][i];
             dg3dr += cDrni*s_G[3][i];
+            
             dg0ds += cDsni*s_G[0][i];
             dg1ds += cDsni*s_G[1][i];
             dg2ds += cDsni*s_G[2][i];
@@ -362,6 +214,180 @@ SOFTWARE.
 }
 
 
+// // Compressible Navier-Stokes
+// @kernel void cnsCubatureVolumeADiffPhysicalTri2D(const dlong Nelements,
+//                                                 @restrict const  dfloat *  vgeo,
+//                                                 @restrict const  dfloat *  cubvgeo,
+//                                                 @restrict const  dfloat *  cubD,
+//                                                 @restrict const  dfloat *  cubPDT,
+//                                                 @restrict const  dfloat *  cubInterp,
+//                                                 @restrict const  dfloat *  cubProject,
+//                                                 @restrict const  dfloat *  x,
+//                                                 @restrict const  dfloat *  y,
+//                                                 @restrict const  dfloat *  z,
+//                                                 const dfloat t,
+//                                                 const dfloat mu,
+//                                                 @restrict const  dfloat *  muA,
+//                                                 const dfloat gamma,
+//                                                 @restrict const  dfloat *  q,
+//                                                 @restrict const  dfloat *  gradq,
+//                                                 @restrict dfloat *  rhsq){
+
+//   for(dlong e=0;e<Nelements;++e;@outer(0)){
+
+//     @shared dfloat s_q[p_Nfields][p_Np];
+//     @shared dfloat s_gradq[p_Ngrads][p_Np];
+
+//     @shared dfloat s_F[p_Nfields][p_cubNp];
+//     @shared dfloat s_G[p_Nfields][p_cubNp];
+
+//     @shared dfloat s_mu[p_Np];
+
+//     @exclusive dfloat fx, fy;
+
+//     for(int n=0;n<p_cubNp;++n;@inner(0)){      // for all nodes in this element
+//       if(n<p_Np){
+//         const dlong  qbase = e*p_Np*p_Nfields + n;
+//         const dlong id = e*p_Np*p_Ngrads + n;
+
+//         const dfloat r  = q[qbase+0*p_Np];
+//         const dfloat ru = q[qbase+1*p_Np];
+//         const dfloat rv = q[qbase+2*p_Np];
+//         const dfloat E  = q[qbase+3*p_Np];
+
+//         // primitive variables (velocity)
+//         const dfloat u = ru/r, v = rv/r;
+//         const dfloat p = (gamma-1)*(E-0.5*r*(u*u+v*v));
+
+//         s_q[0][n] = r;
+//         s_q[1][n] = ru;
+//         s_q[2][n] = rv;
+//         s_q[3][n] = E;
+
+//         s_gradq[0][n] = gradq[id+0*p_Np];
+//         s_gradq[1][n] = gradq[id+1*p_Np];
+//         s_gradq[2][n] = gradq[id+2*p_Np];
+//         s_gradq[3][n] = gradq[id+3*p_Np];
+
+//         // read viscosity and add to bulk viscosity
+//         const dfloat mun = muA[e*p_Np + n] + mu; 
+//         s_mu[n] = mun; 
+
+//         //Body force contribution
+//         fx = 0.0; fy = 0.0;
+//         cnsBodyForce2D(gamma, mun, t, x[e*p_Np+n], y[e*p_Np+n], r, u, v, p, &fx, &fy);
+//         fx *= r; fy *= r;
+//       }
+//     }
+
+
+//     for(int n=0;n<p_cubNp;++n;@inner(0)){
+//       //interpolate to cubature
+//       dfloat r = 0., ru = 0., rv = 0., E = 0.;
+//       dfloat dudx = 0., dudy = 0.;
+//       dfloat dvdx = 0., dvdy = 0.;
+//       dfloat r_mu = 0.;
+//       #pragma unroll p_Np
+//         for(int i=0;i<p_Np;++i){
+//           const dfloat cIni = cubInterp[n+i*p_cubNp];
+//           r  += cIni*s_q[0][i];
+//           ru += cIni*s_q[1][i];
+//           rv += cIni*s_q[2][i];
+//           E  += cIni*s_q[3][i];
+//           dudx += cIni*s_gradq[0][i];
+//           dudy += cIni*s_gradq[1][i];
+//           dvdx += cIni*s_gradq[2][i];
+//           dvdy += cIni*s_gradq[3][i];
+
+//           r_mu += cIni*s_mu[i];
+
+//         }
+
+//       // primitive variables
+//       const dfloat u = ru/r, v = rv/r;
+//       const dfloat p  = (gamma-1)*(E-0.5*r*(u*u+v*v));
+
+//       const dfloat T11 = r_mu*( 2.0*dudx - 2.0*(dudx+dvdy)/3.0);
+//       const dfloat T12 = r_mu*(dudy+dvdx);
+//       const dfloat T22 = r_mu*(2.0*dvdy - 2.0*(dudx+dvdy)/3.0);
+
+//       // F0 = ru, G0 = rv
+//       s_F[0][n] = -ru;
+//       s_G[0][n] = -rv;
+
+//       // F1 = 2*mu*T11 - (ru^2+p), G1 = 2*mu*T12 - (rvu)
+//       s_F[1][n] = -(ru*u+p) + T11;
+//       s_G[1][n] = -(rv*u)   + T12;
+
+//       // F2 = 2*mu*T21 - (ruv), G2 = 2*mu*T22 - (rv^2+p)
+//       s_F[2][n] = -(rv*u)   + T12;
+//       s_G[2][n] = -(rv*v+p) + T22;
+
+//       // F3 = mu*(u*T11+v*T12) - (uE+up), G2 = mu*(u*T12+v*T22) - (vE+vp)
+//       s_F[3][n] = -u*(E+p) + (u*T11 + v*T12);
+//       s_G[3][n] = -v*(E+p) + (u*T12 + v*T22);
+//     }
+
+
+//     for(int n=0;n<p_cubNp;++n;@inner(0)){
+//       if (n<p_Np) {
+//         // prefetch geometric factors (constant on triangle)
+//         const dfloat drdx = vgeo[e*p_Nvgeo + p_RXID];
+//         const dfloat drdy = vgeo[e*p_Nvgeo + p_RYID];
+//         const dfloat dsdx = vgeo[e*p_Nvgeo + p_SXID];
+//         const dfloat dsdy = vgeo[e*p_Nvgeo + p_SYID];
+
+//         dfloat df0dr = 0.f, df0ds = 0.f;
+//         dfloat df1dr = 0.f, df1ds = 0.f;
+//         dfloat df2dr = 0.f, df2ds = 0.f;
+//         dfloat df3dr = 0.f, df3ds = 0.f;
+//         dfloat dg0dr = 0.f, dg0ds = 0.f;
+//         dfloat dg1dr = 0.f, dg1ds = 0.f;
+//         dfloat dg2dr = 0.f, dg2ds = 0.f;
+//         dfloat dg3dr = 0.f, dg3ds = 0.f;
+
+//         #pragma unroll p_cubNp
+//           for(int i=0;i<p_cubNp;++i){
+//             const dfloat cDrni = cubPDT[n+i*p_Np+0*p_cubNp*p_Np];
+//             const dfloat cDsni = cubPDT[n+i*p_Np+1*p_cubNp*p_Np];
+
+//             df0dr += cDrni*s_F[0][i];
+//             df1dr += cDrni*s_F[1][i];
+//             df2dr += cDrni*s_F[2][i];
+//             df3dr += cDrni*s_F[3][i];
+//             df0ds += cDsni*s_F[0][i];
+//             df1ds += cDsni*s_F[1][i];
+//             df2ds += cDsni*s_F[2][i];
+//             df3ds += cDsni*s_F[3][i];
+
+//             dg0dr += cDrni*s_G[0][i];
+//             dg1dr += cDrni*s_G[1][i];
+//             dg2dr += cDrni*s_G[2][i];
+//             dg3dr += cDrni*s_G[3][i];
+//             dg0ds += cDsni*s_G[0][i];
+//             dg1ds += cDsni*s_G[1][i];
+//             dg2ds += cDsni*s_G[2][i];
+//             dg3ds += cDsni*s_G[3][i];
+//           }
+
+//         const dfloat rhsq0 = drdx*df0dr + dsdx*df0ds + drdy*dg0dr + dsdy*dg0ds;
+//         const dfloat rhsq1 = drdx*df1dr + dsdx*df1ds + drdy*dg1dr + dsdy*dg1ds;
+//         const dfloat rhsq2 = drdx*df2dr + dsdx*df2ds + drdy*dg2dr + dsdy*dg2ds;
+//         const dfloat rhsq3 = drdx*df3dr + dsdx*df3ds + drdy*dg3dr + dsdy*dg3ds;
+
+//         const dlong base = e*p_Np*p_Nfields + n;
+
+//         // move to rhs
+//         rhsq[base+0*p_Np] = -rhsq0;
+//         rhsq[base+1*p_Np] = -rhsq1+fx;
+//         rhsq[base+2*p_Np] = -rhsq2+fy;
+//         rhsq[base+3*p_Np] = -rhsq3;
+//       }
+//     }
+//   }
+// }
+
+
 
 // Compressible Navier-Stokes
 @kernel void cnsCubatureVolumeADiffLaplaceTri2D(const dlong Nelements,
@@ -374,8 +400,8 @@ SOFTWARE.
                                                 @restrict const  dfloat *  x,
                                                 @restrict const  dfloat *  y,
                                                 @restrict const  dfloat *  z,
-                                                const dfloat t,
                                                 @restrict const  dfloat * pCoeff,
+                                                const dfloat t,
                                                 @restrict const  dfloat *  muA,
                                                 @restrict const  dfloat *  q,
                                                 @restrict const  dfloat *  gradq,
@@ -534,6 +560,213 @@ SOFTWARE.
       // F3 = mu*(u*T11+v*T12) - (uE+up), G2 = mu*(u*T12+v*T22) - (vE+vp)
       s_F[3][n] = -u*(rE+p) + (u*T11 + v*T12) + rm*dredx;
       s_G[3][n] = -v*(rE+p) + (u*T12 + v*T22) + rm*dredy;
+    }
+
+
+    for(int n=0;n<p_cubNp;++n;@inner(0)){
+      if (n<p_Np) {
+        // prefetch geometric factors (constant on triangle)
+        const dfloat drdx = vgeo[e*p_Nvgeo + p_RXID];
+        const dfloat drdy = vgeo[e*p_Nvgeo + p_RYID];
+        const dfloat dsdx = vgeo[e*p_Nvgeo + p_SXID];
+        const dfloat dsdy = vgeo[e*p_Nvgeo + p_SYID];
+
+        dfloat df0dr = 0.f, df0ds = 0.f;
+        dfloat df1dr = 0.f, df1ds = 0.f;
+        dfloat df2dr = 0.f, df2ds = 0.f;
+        dfloat df3dr = 0.f, df3ds = 0.f;
+        dfloat dg0dr = 0.f, dg0ds = 0.f;
+        dfloat dg1dr = 0.f, dg1ds = 0.f;
+        dfloat dg2dr = 0.f, dg2ds = 0.f;
+        dfloat dg3dr = 0.f, dg3ds = 0.f;
+
+        #pragma unroll p_cubNp
+          for(int i=0;i<p_cubNp;++i){
+            const dfloat cDrni = cubPDT[n+i*p_Np+0*p_cubNp*p_Np];
+            const dfloat cDsni = cubPDT[n+i*p_Np+1*p_cubNp*p_Np];
+
+            df0dr += cDrni*s_F[0][i];
+            df1dr += cDrni*s_F[1][i];
+            df2dr += cDrni*s_F[2][i];
+            df3dr += cDrni*s_F[3][i];
+
+            df0ds += cDsni*s_F[0][i];
+            df1ds += cDsni*s_F[1][i];
+            df2ds += cDsni*s_F[2][i];
+            df3ds += cDsni*s_F[3][i];
+
+            dg0dr += cDrni*s_G[0][i];
+            dg1dr += cDrni*s_G[1][i];
+            dg2dr += cDrni*s_G[2][i];
+            dg3dr += cDrni*s_G[3][i];
+
+            dg0ds += cDsni*s_G[0][i];
+            dg1ds += cDsni*s_G[1][i];
+            dg2ds += cDsni*s_G[2][i];
+            dg3ds += cDsni*s_G[3][i];
+          }
+
+        const dfloat rhsq0 = drdx*df0dr + dsdx*df0ds + drdy*dg0dr + dsdy*dg0ds;
+        const dfloat rhsq1 = drdx*df1dr + dsdx*df1ds + drdy*dg1dr + dsdy*dg1ds;
+        const dfloat rhsq2 = drdx*df2dr + dsdx*df2ds + drdy*dg2dr + dsdy*dg2ds;
+        const dfloat rhsq3 = drdx*df3dr + dsdx*df3ds + drdy*dg3dr + dsdy*dg3ds;
+
+        const dlong base = e*p_Np*p_Nfields + n;
+
+        // move to rhs
+        rhsq[base+0*p_Np] = -rhsq0;
+        rhsq[base+1*p_Np] = -rhsq1+fx;
+        rhsq[base+2*p_Np] = -rhsq2+fy;
+        rhsq[base+3*p_Np] = -rhsq3;
+      }
+    }
+  }
+}
+
+
+
+//  Compressible Navier-Stokes
+@kernel void cnsCubatureVolumeLimiterTri2D(const dlong Nelements,
+                                                @restrict const  dfloat *  vgeo,
+                                                @restrict const  dfloat *  cubvgeo,
+                                                @restrict const  dfloat *  cubD,
+                                                @restrict const  dfloat *  cubPDT,
+                                                @restrict const  dfloat *  cubInterp,
+                                                @restrict const  dfloat *  cubProject,
+                                                @restrict const  dfloat *  x,
+                                                @restrict const  dfloat *  y,
+                                                @restrict const  dfloat *  z,
+                                                @restrict const  dfloat * pCoeff,
+                                                const dfloat t,
+                                                @restrict const  dfloat *  q,
+                                                @restrict const  dfloat *  gradq,
+                                                @restrict dfloat *  rhsq){
+
+  for(dlong e=0;e<Nelements;++e;@outer(0)){
+
+    @shared dfloat s_q[p_Nfields][p_Np];
+    @shared dfloat s_gradq[p_Ngrads][p_Np];
+
+    @shared dfloat s_F[p_Nfields][p_cubNp];
+    @shared dfloat s_G[p_Nfields][p_cubNp];
+
+    @exclusive dfloat fx, fy;
+
+    for(int n=0;n<p_cubNp;++n;@inner(0)){      // for all nodes in this element
+      if(n<p_Np){
+        const dlong  qbase = e*p_Np*p_Nfields + n;
+        const dlong id     = e*p_Np*p_Ngrads + n;
+
+        const dfloat gamma = pCoeff[p_GMID]; // gamma
+        const dfloat mu    = pCoeff[p_MUID]; // bulk viscosity
+
+        const dfloat rr = q[qbase+0*p_Np];
+        const dfloat ru = q[qbase+1*p_Np];
+        const dfloat rv = q[qbase+2*p_Np];
+        const dfloat rE = q[qbase+3*p_Np];
+
+        s_q[0][n] = rr;
+        s_q[1][n] = ru;
+        s_q[2][n] = rv;
+        s_q[3][n] = rE;
+
+        s_gradq[0][n] = gradq[id+0*p_Np];
+        s_gradq[1][n] = gradq[id+1*p_Np];        
+        s_gradq[2][n] = gradq[id+2*p_Np];
+        s_gradq[3][n] = gradq[id+3*p_Np];
+        s_gradq[4][n] = gradq[id+4*p_Np];
+        s_gradq[5][n] = gradq[id+5*p_Np];        
+        s_gradq[6][n] = gradq[id+6*p_Np];
+        s_gradq[7][n] = gradq[id+7*p_Np];
+
+        // primitive variables (velocity)
+        const dfloat u = ru/rr, v = rv/rr;
+        const dfloat p = (gamma-1)*(rE-0.5*rr*(u*u+v*v));
+        //Body force contribution
+        fx = 0.0; fy = 0.0;
+        cnsBodyForce2D(gamma, mu, t, x[e*p_Np+n], y[e*p_Np+n], rr, u, v, p, &fx, &fy);
+        fx *= rr; fy *= rr;
+      }
+    }
+
+
+    for(int n=0;n<p_cubNp;++n;@inner(0)){
+      const dfloat gamma = pCoeff[p_GMID]; // gamma
+            dfloat mu    = pCoeff[p_MUID]; // bulk viscosity
+
+      //interpolate to cubature
+      dfloat rr = 0., ru = 0.; 
+      dfloat rv = 0., rE = 0.;
+
+      dfloat drrdx = 0., drrdy = 0.;
+      dfloat drudx = 0., drudy = 0.;
+      dfloat drvdx = 0., drvdy = 0.;
+      dfloat dredx = 0., dredy = 0.;
+
+      #pragma unroll p_Np
+        for(int i=0;i<p_Np;++i){
+          const dfloat cIni = cubInterp[n+i*p_cubNp];
+
+          rr += cIni*s_q[0][i];
+          ru += cIni*s_q[1][i];
+          rv += cIni*s_q[2][i];
+          rE += cIni*s_q[3][i];
+
+          drrdx += cIni*s_gradq[0][i];
+          drrdy += cIni*s_gradq[1][i];
+          drudx += cIni*s_gradq[2][i];
+          drudy += cIni*s_gradq[3][i];
+          drvdx += cIni*s_gradq[4][i];
+          drvdy += cIni*s_gradq[5][i];
+          dredx += cIni*s_gradq[6][i];
+          dredy += cIni*s_gradq[7][i];
+        }
+
+      const dfloat ir = 1./ rr;   
+      // primitive variables
+      const dfloat u  = ru*ir; 
+      const dfloat v  = rv*ir;
+      const dfloat ke = 0.5*(u*u+v*v);
+      const dfloat p  = (gamma-1)*(rE- rr*ke);
+
+      const dfloat dudx = (drudx - drrdx*u)*ir;
+      const dfloat dvdx = (drvdx - drrdx*v)*ir;
+      const dfloat dudy = (drudy - drrdy*u)*ir;
+      const dfloat dvdy = (drvdy - drrdy*v)*ir;
+
+      if(p_viscType==2){ // Sutherland
+        //nondimensional temp =  p/(\rho * R)/Tref
+        const dfloat R    = pCoeff[p_RRID]; 
+        const dfloat exp  = pCoeff[p_EXID]; // Exponential term
+        const dfloat tr   = pCoeff[p_TRID]; // 1/Tref 
+        const dfloat ts   = pCoeff[p_TSID]; // Ts/Tref
+        const dfloat cs   = pCoeff[p_CSID]; // precomuted value to simlify
+        const dfloat tn   = p*ir*tr/R; // non-dimensional temp
+        mu  = (tn > ts) ? (mu*pow(tn, exp)*(1.0+ts)/(tn + ts)) : mu*tn*cs;  
+        // mu  = mu*pow(tn, exp)*(1.0+ts)/(tn + ts);  
+      }else if(p_viscType==3){ // Powerlaw
+
+      }
+
+      const dfloat T11 = mu*( 2.0*dudx - 2.0*(dudx+dvdy)/3.0);
+      const dfloat T12 = mu*(dudy+dvdx);
+      const dfloat T22 = mu*(2.0*dvdy - 2.0*(dudx+dvdy)/3.0);
+
+      // F0 = ru, G0 = rv
+      s_F[0][n] = -ru;
+      s_G[0][n] = -rv;
+
+      // F1 = 2*mu*T11 - (ru^2+p), G1 = 2*mu*T12 - (rvu)
+      s_F[1][n] = -(ru*u+p) + T11; 
+      s_G[1][n] = -(rv*u)   + T12; 
+
+      // F2 = 2*mu*T21 - (ruv), G2 = 2*mu*T22 - (rv^2+p)
+      s_F[2][n] = -(rv*u)   + T12;
+      s_G[2][n] = -(rv*v+p) + T22;
+
+      // F3 = mu*(u*T11+v*T12) - (uE+up), G2 = mu*(u*T12+v*T22) - (vE+vp)
+      s_F[3][n] = -u*(rE+p) + (u*T11 + v*T12);
+      s_G[3][n] = -v*(rE+p) + (u*T12 + v*T22);
     }
 
 

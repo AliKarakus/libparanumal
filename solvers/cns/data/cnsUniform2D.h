@@ -26,6 +26,13 @@ SOFTWARE.
 
 //Mean flow
 #define p_RBAR 1.0
+#define p_UBAR 0.939692620785908
+#define p_VBAR 0.342020143325669
+
+// #define p_PBAR 7.936507936507937 // Ma = 0.3
+#define p_PBAR 0.496031746031746
+
+
 
 // #define p_UBAR 0.990268069
 // #define p_VBAR 0.139173101
@@ -36,9 +43,6 @@ SOFTWARE.
 
 
 
-#define p_UBAR 1.0
-#define p_VBAR 0.0
-#define p_PBAR 0.317460317460317
 
 //P = RHO * U^2/(Ma^2*gamma)
 // #define p_PBAR 0.197863078749505
@@ -74,6 +78,7 @@ SOFTWARE.
 //#define p_PBAR 0.317460317460317
 
 
+// ************************************************************************
 // Initial conditions (p is ignored for isothermal)
 #define cnsInitialConditions2D(gamma, mu, t, x, y, r, u, v, p) \
 {                                         \
@@ -132,10 +137,10 @@ const dfloat igammaP1 = 1.0/ gammaP1;                                     \
     *(vxB) = vxM;                      \
     *(vyB) = vyM;                      \
   } else if(bc==3){                    \
-    *(rB) = rM;                    \
-    *(uB) = uM;                    \
+    *(rB) = rM;                        \
+    *(uB) = uM;                        \
     *(vB) = vM;                        \
-    *(pB) = p_PBAR;                    \
+    *(pB) = pM;                    \
     *(uxB) = 0.0;                      \
     *(uyB) = 0.0;                      \
     *(vxB) = 0.0;                      \
@@ -151,6 +156,11 @@ const dfloat igammaP1 = 1.0/ gammaP1;                                     \
     *(vyB) = vyM;                      \
   }                                    \
 }
+
+
+
+    // *(pB) = p_PBAR;                    \
+
 
 //**Pressure Outflow **//
 // const dfloat c2 = gamma*pM/rM;         \

@@ -99,8 +99,6 @@ class stab_t {
   deviceMemory<dfloat> o_efList; 
   kernel_t copyIntKernel; 
 
-
-
   memory<dfloat> qd;
   deviceMemory<dfloat> o_qd; 
 
@@ -132,6 +130,43 @@ class stab_t {
   /*****************************/
   /*   LIMITER STABILIZATION    */
   /*****************************/
+  memory<dfloat> qv; 
+  deviceMemory<dfloat> o_qv; 
+
+  memory<dfloat> qc; 
+  deviceMemory<dfloat> o_qc; 
+
+  memory<dfloat> dq; 
+  deviceMemory<dfloat> o_dq; 
+
+  memory<dfloat> dqf; 
+  deviceMemory<dfloat> o_dqf; 
+
+  // Project to cell centers
+  memory<dfloat> projectC0; 
+  deviceMemory<dfloat> o_projectC0; 
+
+  memory<int> vertexNodes;
+  deviceMemory<int> o_vertexNodes; 
+
+  // differences with respect to cell-center
+  // required for Taylor expansion 
+  memory<dfloat> dAVE; 
+  
+  memory<dfloat> DX; 
+  deviceMemory<dfloat>  o_DX; 
+
+   // *********************LIMITER RELATED*****************************//
+   void stabSetupLimiter(); 
+   void limSetupOperators(); 
+
+   void limGeometricFactorsTri2D(); 
+   void limGeometricFactorsQuad2D(); 
+   void limGeometricFactorsTet3D(); 
+   void limGeometricFactorsHex3D(); 
+
+
+
 
 
 
@@ -147,6 +182,9 @@ class stab_t {
 
   memory<dfloat> weight; 
   deviceMemory<dfloat> o_weight; 
+
+
+
 
 
   // Memory for artificial Viscosity Activation Function 
@@ -254,7 +292,7 @@ class stab_t {
         stabSetupFilter();
         break;
       case Stab::LIMITER:
-         // StabilizerSetupLimiter();
+         stabSetupLimiter();
          // LIBP_FORCE_ABORT("Limiter is not implemented yet");
         break;
       case Stab::ARTDIFF:
@@ -334,22 +372,7 @@ class stab_t {
    void CellEquispacedEToVTri2D(const int _N, memory<int>& mEToV);
    void CellWarpBlendEToVTri2D(const int _N, memory<int>& mEToV);
 
-  // *********************LIMITER RELATED*****************************//
-
-
-   // void GeometricFactorsQuad2D(); 
-   // void GeometricFactorsHex3D(); 
-   // void GeometricFactorsTet3D(); 
-
-
-
-
-
-   // void stabSetupSubcellQuad2D(); 
-   // void stabSetupSubcellTet3D(); 
-   // void stabSetupSubcellHex3D(); 
-   // void stabApplyArtdiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T); 
-
+  
 
 
 

@@ -270,6 +270,7 @@ void dopri5::Step(solver_t& solver, deviceMemory<dfloat> &o_q, dfloat time, dflo
                    o_rkrhsq,
                    o_rkq,
                    o_rkerr);
+  // solver.postStage(o_q, o_rhsq, time, _dt); 
   }
 
   solver.postStep(o_q, time, _dt); 

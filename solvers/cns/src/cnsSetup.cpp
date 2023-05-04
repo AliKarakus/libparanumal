@@ -45,17 +45,27 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
   bool verbose = true,  unique  = true; 
   stab.ogs.Setup(mesh.Nelements*mesh.Nverts, meshC.globalIds, mesh.comm, 
                 ogs::Signed, ogs::Auto, unique, verbose, platform); 
-
-
   stab.weight.malloc(mesh.Nelements*mesh.Nverts, 1.0);
   stab.ogs.GatherScatter(stab.weight, 1, ogs::Add, ogs::Sym); 
-  for(int i=0; i < mesh.Nelements*mesh.Nverts; i++ ){ 
-    stab.weight[i] = 1./stab.weight[i];
+  for(int i=0; i < mesh.Nelements*mesh.Nverts; i++ ){ stab.weight[i] = 1./stab.weight[i];}
+
+  stab.o_weight = platform.malloc<dfloat>(stab.weight); 
+
+  // stab = _stab; 
+  //   // used for the weight in linear solvers (used in C0)
+  // bool verbose = true; 
+  // bool unique  = true; 
+  // stab.ogs.Setup(mesh.Nelements*mesh.Np, mesh.globalIds, mesh.comm, 
+  //               ogs::Signed, ogs::Auto, unique, verbose, platform); 
+  // stab.weight.malloc(mesh.Nelements*mesh.Np, 1.0);
+  // stab.ogs.GatherScatter(stab.weight, 1, ogs::Add, ogs::Sym); 
+
+  // for(int i=0; i < mesh.Nelements*mesh.Np; i++ ){ stab.weight[i] = 1./stab.weight[i];}
+  // stab.o_weight = platform.malloc<dfloat>(stab.weight); 
   }
 
-    stab.o_weight = platform.malloc<dfloat>(stab.weight); 
 
-  }
+
 
 
 {
@@ -78,7 +88,7 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
     settings.getSetting("REYNOLDS NUMBER", Re);
     settings.getSetting("MACH NUMBER", Ma);
     // Set viscosity to 1/Re 
-    mu = 1.0/Re; 
+    mu = (Re==0.0) ? 0.0 : 1.0/Re; 
     // Set gas constant to 1/(gamma*Ma^2) 
     R  = 1.0/(gamma*Ma*Ma); 
     // Reference Temperature // Tref = p_ref/r_ref * gamma
@@ -139,7 +149,7 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
   if (!isothermal) Nfields++; 
 
   if(stab.stabType==Stab::ARTDIFF){
-    if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE")){
+    if(stab.settings.compareSetting("ARTDIFF TYPE", "LAPLACE") ){
       Ngrads = mesh.dim*Nfields; // for all conservative fields
     }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
       Ngrads = mesh.dim*mesh.dim; // just for velocity field      
@@ -196,11 +206,35 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
 
   // OCCA build stuff
   properties_t kernelInfo = mesh.props; //copy base occa properties
-
+    // properties_t kernelInfo = stab.props; /*copy base occa properties*/
   //add boundary data to kernel info
   std::string dataFileName;
   settings.getSetting("DATA FILE", dataFileName);
   kernelInfo["includes"] += dataFileName;
+
+{
+  // DEGISTIR.....AK
+  kernelInfo["defines/" "s_Nvgeo"]= 3;
+  kernelInfo["defines/" "s_CXID"]= 0;
+  kernelInfo["defines/" "s_CYID"]= 1;
+  kernelInfo["defines/" "s_SAID"]= 2;
+  kernelInfo["defines/" "s_Nverts"]= int(mesh.Nverts);
+  kernelInfo["defines/" "s_NfacesNverts"]= int(mesh.NfaceVertices*mesh.Nfaces);
+
+  // printf("NfaceVertices = %d\n", int(mesh.NfaceVertices*mesh.Nfaces));
+  // Needed for Subcell Only
+  if(stab.stabType==Stab::SUBCELL || stab.stabType==Stab::LIMITER){
+  kernelInfo["defines/" "s_DGDG_TYPE"] = int(0); 
+  kernelInfo["defines/" "s_FVFV_TYPE"] = int(1); 
+  kernelInfo["defines/" "s_DGFV_TYPE"] = int(2); 
+  }
+
+
+
+}
+
+  //add defines
+  kernelInfo["defines/" "p_blockSize"] = 512;
 
   kernelInfo["defines/" "p_Nfields"]= Nfields;
   kernelInfo["defines/" "p_Ngrads"]= Ngrads;
@@ -245,6 +279,9 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
   kernelInfo["defines/" "p_TSID"]= TSID;
   kernelInfo["defines/" "p_CSID"]= CSID;
   // }
+
+
+
 
 
 }
@@ -310,6 +347,8 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
         }else if(stab.settings.compareSetting("ARTDIFF TYPE", "PHYSICAL")){
           kernelName = "cnsCubatureVolumeADiffPhysical" + suffix;
         }
+      }else if(stab.stabType==Stab::LIMITER){
+        kernelName = "cnsCubatureVolume" + suffix;
       }else{
         kernelName = "cnsCubatureVolume" + suffix;
       }
@@ -326,6 +365,10 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
           kernelName = "cnsCubatureSurfaceADiffPhysical" + suffix;
 
         }
+      }else if(stab.stabType==Stab::LIMITER){
+        // kernelName = "cnsCubatureSurfaceADiffLaplace" + suffix;
+        kernelName = "cnsCubatureSurface" + suffix;
+
       }else{
         kernelName = "cnsCubatureSurface" + suffix;
       }
@@ -378,6 +421,9 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
     }else{
       kernelName = "cnsGradVolume" + suffix; // Compute gradient of velocity field
     }
+  }else if(stab.stabType==Stab::LIMITER){
+    // kernelName = "cnsGradVolumeConservative" + suffix; // gradient of all conservative fields
+    kernelName = "cnsGradVolume" + suffix; // gradient of all conservative fields    
   }else{
     kernelName = "cnsGradVolume" + suffix; 
   }
@@ -392,12 +438,30 @@ void cns_t::Setup(platform_t& _platform, mesh_t& _mesh, stab_t &_stab,
     }else{
       kernelName = "cnsGradSurface" + suffix; // Compute gradient of velocity field
     }
+  }else if(stab.stabType==Stab::LIMITER){
+    kernelName = "cnsGradSurface" + suffix; // gradient of all conservative fields
   }else{
     kernelName = "cnsGradSurface" + suffix; 
   }
 
   gradSurfaceKernel = platform.buildKernel(fileName, kernelName,
                                            kernelInfo);
+
+  // 
+  if(stab.stabType==Stab::LIMITER){
+    fileName   = oklFilePrefix + "cnsLimiter" + suffix + oklFileSuffix;
+    kernelName = "cnsLimiterCellVariable" + suffix;
+    limiterCellVariableKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
+
+
+    kernelName = "cnsLimiterUnlimitedGradient" + suffix;
+    limiterUnlimitedGradientKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
+
+    kernelName = "cnsLimiterReconstruct" + suffix;
+    limiterReconstructKernel = platform.buildKernel(fileName, kernelName, kernelInfo);
+
+  }
+
 
   // vorticity calculation
   fileName   = oklFilePrefix + "cnsVorticity" + suffix + oklFileSuffix;

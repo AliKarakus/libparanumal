@@ -191,7 +191,6 @@ if(stabType==Stab::ARTDIFF){
   copyIntKernel((mesh.Nelements+mesh.totalHaloPairs)*dNfields, 
               o_efList, 
               o_eList); 
-
 }else{
   LIBP_FORCE_ABORT("Klockner detector is not implemented for this stabilization method");
 }

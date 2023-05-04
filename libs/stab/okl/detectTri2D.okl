@@ -244,7 +244,7 @@
 	      const dfloat s0    = 2.0;  
 	      const dfloat kappa = 1.0; 	
 	      // use (s0 + kappa)^2 = 9 	     
-	      ElementList[e*p_dNfields + fld] = coeff*coeff <  9.0? 1 : 0;	 
+	      ElementList[e*p_dNfields + fld] = coeff*coeff <  4.0? 1 : 0;	 
 
 	      dfloat avisc = 0.0; 
 	    	if(sk<(s0-kappa))

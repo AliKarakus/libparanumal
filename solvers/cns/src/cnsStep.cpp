@@ -31,7 +31,8 @@ SOFTWARE.
 void cns_t::rhsf(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
    if(stab.stabType==Stab::ARTDIFF){
       rhsArtDiff(o_Q, o_RHS, T); 
-      // rhsNoStab(o_Q, o_RHS, T); 
+    }else if(stab.stabType==Stab::LIMITER){
+      rhsLimiter(o_Q, o_RHS, T); 
     }else{
       rhsNoStab(o_Q, o_RHS, T); 
    }
@@ -61,8 +62,52 @@ dfloat cns_t::MaxWaveSpeed(deviceMemory<dfloat>& o_Q, const dfloat T){
 }
 
 
-void cns_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_sQ, const dfloat T, const dfloat DT){
+void cns_t::postStage(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat> & o_RHS, const dfloat T, const dfloat DT){
 
+
+ // stab.detectApply(o_Q, o_RHS, T); 
+
+
+ // limiterCellVariableKernel((mesh.Nelements +mesh.NhaloElements), 
+ //                         stab.o_eList,
+ //                         mesh.o_vmapM, 
+ //                         mesh.o_vmapP,  
+ //                         o_pCoeff, 
+ //                         stab.o_projectC0, 
+ //                         o_Q, 
+ //                         stab.o_qc, 
+ //                         stab.o_qv);
+  
+ //  limiterUnlimitedGradientKernel((mesh.Nelements +mesh.NhaloElements), 
+ //                               stab.o_eList, 
+ //                               mesh.o_EToE, 
+ //                               mesh.o_EToB, 
+ //                               stab.o_vertexNodes,
+ //                               mesh.o_sgeo, 
+ //                               stab.o_vgeo,
+ //                               mesh.o_x, 
+ //                               mesh.o_y, 
+ //                               o_pCoeff,
+ //                               T, 
+ //                               stab.o_qc, 
+ //                               stab.o_qv, 
+ //                               stab.o_dqf, 
+ //                               stab.o_dq);
+
+ //  limiterReconstructKernel(mesh.Nelements, 
+ //                          stab.o_eList, 
+ //                          mesh.o_EToE, 
+ //                          mesh.o_EToB, 
+ //                          stab.o_vgeo,
+ //                          stab.o_DX,
+ //                          mesh.o_x, 
+ //                          mesh.o_y, 
+ //                          o_pCoeff,
+ //                          T, 
+ //                          stab.o_qc, 
+ //                          stab.o_dqf, 
+ //                          stab.o_dq, 
+ //                          o_Q);
 
 }
 
@@ -79,7 +124,7 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
 
 {
 
-  if(T>0.1){
+  if(T>0.0){
 
   stab.detectApply(o_Q, o_RHS, T); 
 
@@ -113,15 +158,17 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
 // 
    // Report(T, T);
    }else{
-        // set time step
       dfloat hmin = mesh.MinCharacteristicLength();
       const dfloat visc = 1.0* hmin/mesh.N; 
       platform.linAlg().set(mesh.Nelements*mesh.Np, visc, stab.o_visc);
-
-
    }
 
   }
+
+
+
+  //  const dfloat visc = 0.0;
+  // platform.linAlg().set(mesh.Nelements*mesh.Np, visc, stab.o_visc);
 
   // Now compute the viscous flux : Fv = mu* grad{q} 
   // extract q trace halo and start exchange
@@ -147,8 +194,8 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
                     mesh.o_x,
                     mesh.o_y,
                     mesh.o_z,
-                    T,
                     o_pCoeff, 
+                    T,
                     o_Q,
                     o_gradq);
 
@@ -167,8 +214,8 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
                          mesh.o_x,
                          mesh.o_y,
                          mesh.o_z,
-                         T,
                          o_pCoeff, 
+                         T,
                          stab.o_visc,
                          o_Q,
                          o_gradq,
@@ -206,8 +253,8 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
                             mesh.o_intx,
                             mesh.o_inty,
                             mesh.o_intz,
-                            T,
                             o_pCoeff, 
+                            T,
                             tau,
                             stab.o_visc,
                             o_Q,
@@ -238,6 +285,161 @@ void cns_t::rhsArtDiff(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, c
 
   // Report(T, T);
 }
+
+
+//evaluate ODE rhs = f(q,t)
+void cns_t::rhsLimiter(deviceMemory<dfloat>& o_Q, deviceMemory<dfloat>& o_RHS, const dfloat T){
+  static int frt=0;
+
+  // MPI support is needed to be added: AK. 
+  
+  stab.detectApply(o_Q, o_RHS, T); 
+
+ limiterCellVariableKernel((mesh.Nelements +mesh.NhaloElements), 
+                         stab.o_eList,
+                         mesh.o_vmapM, 
+                         mesh.o_vmapP,  
+                         o_pCoeff, 
+                         stab.o_projectC0, 
+                         o_Q, 
+                         stab.o_qc, 
+                         stab.o_qv);
+  
+  limiterUnlimitedGradientKernel((mesh.Nelements +mesh.NhaloElements), 
+                               stab.o_eList, 
+                               mesh.o_EToE, 
+                               mesh.o_EToB, 
+                               stab.o_vertexNodes,
+                               mesh.o_sgeo, 
+                               stab.o_vgeo,
+                               mesh.o_x, 
+                               mesh.o_y, 
+                               o_pCoeff,
+                               T, 
+                               stab.o_qc, 
+                               stab.o_qv, 
+                               stab.o_dqf, 
+                               stab.o_dq);
+
+  limiterReconstructKernel(mesh.Nelements, 
+                          stab.o_eList, 
+                          mesh.o_EToE, 
+                          mesh.o_EToB, 
+                          stab.o_vgeo,
+                          stab.o_DX,
+                          mesh.o_x, 
+                          mesh.o_y, 
+                          o_pCoeff,
+                          T, 
+                          stab.o_qc, 
+                          stab.o_dqf, 
+                          stab.o_dq, 
+                          o_Q);
+
+
+  // extract q trace halo and start exchange
+  fieldTraceHalo.ExchangeStart(o_Q, 1);
+
+ // compute volume contributions to gradients
+  gradVolumeKernel(mesh.Nelements,
+                   mesh.o_vgeo,
+                   mesh.o_D,
+                   o_Q,
+                   o_gradq);
+
+  // complete trace halo exchange
+  fieldTraceHalo.ExchangeFinish(o_Q, 1);
+
+ // compute surface contributions to gradients
+  gradSurfaceKernel(mesh.Nelements,
+                    mesh.o_sgeo,
+                    mesh.o_LIFT,
+                    mesh.o_vmapM,
+                    mesh.o_vmapP,
+                    mesh.o_EToB,
+                    mesh.o_x,
+                    mesh.o_y,
+                    mesh.o_z,
+                    o_pCoeff, 
+                    T,
+                    o_Q,
+                    o_gradq);
+
+  // extract viscousStresses trace halo and start exchange
+  gradTraceHalo.ExchangeStart(o_gradq, 1);
+
+  // compute volume contribution to cns RHS
+  if (cubature) {
+     cubatureVolumeKernel(mesh.Nelements,
+                         mesh.o_vgeo,
+                         mesh.o_cubvgeo,
+                         mesh.o_cubD,
+                         mesh.o_cubPDT,
+                         mesh.o_cubInterp,
+                         mesh.o_cubProject,
+                         mesh.o_x,
+                         mesh.o_y,
+                         mesh.o_z,
+                         o_pCoeff, 
+                         T,
+                         o_Q,
+                         o_gradq,
+                         o_RHS);
+  } else {
+    volumeKernel(mesh.Nelements,
+                 mesh.o_vgeo,
+                 mesh.o_D,
+                 mesh.o_x,
+                 mesh.o_y,
+                 mesh.o_z,
+                 T,
+                 mu,
+                 gamma,
+                 o_Q,
+                 o_gradq,
+                 o_RHS);
+  }
+
+  // complete trace halo exchange
+  gradTraceHalo.ExchangeFinish(o_gradq, 1);
+
+  if (cubature) {
+     cubatureSurfaceKernel(mesh.Nelements,
+                            mesh.o_vgeo,
+                            mesh.o_cubsgeo,
+                            mesh.o_vmapM,
+                            mesh.o_vmapP,
+                            mesh.o_EToB,
+                            mesh.o_intInterp,
+                            mesh.o_intLIFT,
+                            mesh.o_intx,
+                            mesh.o_inty,
+                            mesh.o_intz,
+                            o_pCoeff, 
+                            T,
+                            o_Q,
+                            o_gradq,
+                            o_RHS);
+    } else {
+      surfaceKernel(mesh.Nelements,
+                    mesh.o_sgeo,
+                    mesh.o_LIFT,
+                    mesh.o_vmapM,
+                    mesh.o_vmapP,
+                    mesh.o_EToB,
+                    mesh.o_x,
+                    mesh.o_y,
+                    mesh.o_z,
+                    T,
+                    mu,
+                    gamma,
+                    o_Q,
+                    o_gradq,
+                    o_RHS);
+    }
+}
+
+
 
 
 //evaluate ODE rhs = f(q,t)

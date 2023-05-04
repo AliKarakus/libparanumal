@@ -41,7 +41,7 @@ void stab_t::setTypes(const Stab::SolverType sType,
   } else if (sType==Stab::CNS) {
     solverType = Stab::CNS;
     dNfields   = 1; 
-    sNfields   = mesh.dim==2 ? 4:5; // Non isothermal flow
+    sNfields   = mesh.dim==2 ? 4:5; // non-isothermal flow
   } else if (sType==Stab::INS) {
      solverType = Stab::INS;
       // LIBP_FORCE_ABORT("Stabilization solver type: " << sType <<" is not implemented");

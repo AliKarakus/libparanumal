@@ -2,18 +2,11 @@
 2.0
 
 [DATA FILE]
-#data/cnsGaussian2D.h
-#data/cnsInviscidUniform2D.h
-data/cnsUniform2D.h
-#data/cnsGaussian2D.h
+data/cnsEuler2D.h
 
 [MESH FILE]
 #BOX
-#../../meshes/cnsFFS.msh
-../../meshes/testNACA12_v3.msh
-#../../meshes/testNACA12_v5.msh
-#../../meshes/cnsNACA12_v5.msh
-#../../meshes/cnsTriangle.msh
+../../meshes/cnsFFS2.msh
 
 [MESH DIMENSION]
 2
@@ -34,7 +27,7 @@ data/cnsUniform2D.h
 -1
 
 [POLYNOMIAL DEGREE]
-3
+4
 
 [THREAD MODEL]
 CUDA
@@ -53,13 +46,11 @@ TRUE
 
 # use if nondimensional is TRUE
 [MACH NUMBER]
-1.2
-#0.8
-#1.5
+3.0
 
 # if nondimensional is TRUE
 [REYNOLDS NUMBER]
-10000
+0
 
 [PRANDTL NUMBER]
 0.72
@@ -69,11 +60,11 @@ TRUE
 #287.058
 
 [BULK VISCOSITY]
-0.0001
+0.0
 
 [VISCOSITY TYPE]
-SUTHERLAND
-#CONSTANT
+#SUTHERLAND
+CONSTANT
 
 [ISOTHERMAL]
 FALSE
@@ -85,11 +76,11 @@ CUBATURE
 #COLLOCATION
 
 [CFL NUMBER]
-0.1
+1.0
 
 [TIME INTEGRATOR]
-#LSERK4
-DOPRI5
+LSERK4
+#DOPRI5
 
 # HJS:1  CNS:2  INS:3 
 [STABILIZATION SOLVER TYPE]
@@ -101,7 +92,7 @@ DOPRI5
 
 # Filter: 1, Limiter: 2, Artdiff: 3, Subcell: 4
 [STAB TYPE]
-3
+2
 
 [STAB OUTPUT TO FILE]
 TRUE
@@ -114,10 +105,10 @@ LAPLACE
 0
 
 [FINAL TIME]
-20.0
+1.0
 
 [OUTPUT INTERVAL]
-1.0
+0.1
 
 [OUTPUT TO FILE]
 TRUE

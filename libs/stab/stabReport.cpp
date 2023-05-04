@@ -45,7 +45,9 @@ void stab_t::Report(dfloat time, int tstep){
   	if(eList.length()!=0){
       o_eList.copyTo(eList);
     };
-    
+
+
+    // Artificial Viscosity
     if(o_viscActivation.length()!=0){ 
       o_viscActivation.copyTo(viscActivation);
     }
@@ -57,6 +59,20 @@ void stab_t::Report(dfloat time, int tstep){
     if(o_vertexVisc.length()!=0){ 
       o_vertexVisc.copyTo(vertexVisc);
     }
+
+    // Limiter
+
+    // if(o_qv.length()!=0){ 
+    //   o_qv.copyTo(qv);
+    // }
+
+    // if(o_qc.length()!=0){ 
+    //   o_qc.copyTo(qc);
+    // }
+
+    //  if(o_DX.length()!=0){ 
+    //   o_DX.copyTo(DX);
+    // }
 
 
     PlotElements(eList, std::string(fname));
@@ -154,19 +170,22 @@ void stab_t::PlotElements(memory<dlong> ElementList, const std::string fileName)
   }
 
 
- //  if(viscScale.length()!=0){
- // fprintf(fp, "        <DataArray type=\"Float32\" Name=\"Scale\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
- //  for(dlong e=0;e<mesh.Nelements;++e){
- //      for(int n=0;n<mesh.Nverts;++n){
- //          fprintf(fp, "       ");
- //           for(int fld=0; fld<dNfields; fld++){
- //             fprintf(fp, "%g ", dfloat(viscScale[e*dNfields + fld]));
- //          }
- //          fprintf(fp, "\n");
- //      }
- //    }
- //  fprintf(fp, "       </DataArray>\n");
- //  }
+// if(vertexVisc.length()!=0){
+//  fprintf(fp, "        <DataArray type=\"Float32\" Name=\"vertexVisc\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", sNfields);
+//   for(dlong e=0;e<mesh.Nelements;++e){
+//       for(int n=0;n<mesh.Nverts;++n){
+//           fprintf(fp, "       ");
+//            // for(int fld=0; fld<dNfields; fld++){
+//            for(int fld=0; fld<sNfields; fld++){
+//              // fprintf(fp, "%g ", dfloat(vertexVisc[e*mesh.Nverts*dNfields + fld*mesh.Nverts + n]));
+//              fprintf(fp, "%g ", dfloat(vertexVisc[e*mesh.Nverts*sNfields + n*sNfields +fld]));
+//           }
+//           fprintf(fp, "\n");
+//       }
+//     }
+//   fprintf(fp, "       </DataArray>\n");
+//   }
+
 
 if(vertexVisc.length()!=0){
  fprintf(fp, "        <DataArray type=\"Float32\" Name=\"vertexVisc\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", dNfields);
@@ -180,9 +199,40 @@ if(vertexVisc.length()!=0){
       }
     }
   fprintf(fp, "       </DataArray>\n");
+
   }
 
 
+ //  if(qv.length()!=0){
+ // fprintf(fp, "        <DataArray type=\"Float32\" Name=\"vertexValues\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", sNfields);
+ //  for(dlong e=0;e<mesh.Nelements;++e){
+ //      for(int n=0;n<mesh.Nverts;++n){
+ //          fprintf(fp, "       ");
+ //           for(int fld=0; fld<sNfields; fld++){
+ //             fprintf(fp, "%g ", dfloat(qv[e*mesh.Nverts*sNfields + n*sNfields + fld]));
+ //          }
+ //          fprintf(fp, "\n");
+ //      }
+ //    }
+ //  fprintf(fp, "       </DataArray>\n");
+
+ //  }
+
+
+ //   if(qc.length()!=0){
+ // fprintf(fp, "        <DataArray type=\"Float32\" Name=\"cellAverages\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", sNfields);
+ //  for(dlong e=0;e<mesh.Nelements;++e){
+ //      for(int n=0;n<mesh.Nverts;++n){
+ //          fprintf(fp, "       ");
+ //           for(int fld=0; fld<sNfields; fld++){
+ //             fprintf(fp, "%g ", dfloat(qc[e*sNfields + fld]));
+ //          }
+ //          fprintf(fp, "\n");
+ //      }
+ //    }
+ //  fprintf(fp, "       </DataArray>\n");
+
+ //  }
 
 
 
@@ -308,6 +358,49 @@ FILE *fp;
   }
 
 
+  if (DX.length()!=0) {
+    // write out pressure
+     fprintf(fp, "        <DataArray type=\"Float32\" Name=\"DX\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", mesh.dim);
+    for(dlong e=0;e<mesh.Nelements;++e){
+      mesh.PlotInterp(DX + 0*mesh.Np + e*mesh.Np*mesh.dim, Iu, scratch);
+       if(mesh.dim==2)
+        mesh.PlotInterp(DX + 1*mesh.Np  + e*mesh.Np*mesh.dim, Iv, scratch);
+       if(mesh.dim==3){
+        mesh.PlotInterp(DX + 1*mesh.Np  + e*mesh.Np*mesh.dim, Iv, scratch);
+        mesh.PlotInterp(DX + 2*mesh.Np  + e*mesh.Np*mesh.dim, Iw, scratch);
+      }
+
+      for(int n=0;n<mesh.plotNp;++n){
+        fprintf(fp, "       ");
+        if(mesh.dim==1)
+          fprintf(fp, "%g \n", Iu[n]);
+        else if(mesh.dim==2)
+          fprintf(fp, "%g %g\n", Iu[n], Iv[n]);
+        else if(mesh.dim==3)
+          fprintf(fp, "%g %g %g\n", Iu[n], Iv[n], Iw[n]);
+      }
+    }
+    fprintf(fp, "       </DataArray>\n");
+  }
+
+// if (Q.length()!=0) {
+//     // write out pressure
+//      fprintf(fp, "        <DataArray type=\"Float32\" Name=\"DetectField\" NumberOfComponents=\"%d\" Format=\"ascii\">\n", mesh.dim);
+//     for(dlong e=0;e<mesh.Nelements;++e){
+//       mesh.PlotInterp(Q + 0*mesh.Np + e*mesh.Np*mesh.dim, Iu, scratch);
+//        if(mesh.dim>1)
+//         mesh.PlotInterp(Q + 1*mesh.Np  + e*mesh.Np*mesh.dim, Iv, scratch);
+
+//       for(int n=0;n<mesh.plotNp;++n){
+//         fprintf(fp, "       ");
+//         if(mesh.dim==1)
+//           fprintf(fp, "%g \n", Iu[n]);
+//         else if(mesh.dim==2)
+//           fprintf(fp, "%g %g\n", Iu[n], Iv[n]);
+//       }
+//     }
+//     fprintf(fp, "       </DataArray>\n");
+//   }
 
  if (visc.length()!=0) {
   // write out pressure
